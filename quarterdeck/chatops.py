@@ -8,9 +8,10 @@ from concurrent.futures import Future
 from .agent_registry import AgentRegistry
 from .chat import Chat
 from .events import CHAT_MESSAGE, Event, EventBus
+from .security import encode_untrusted
 from .scheduler import Scheduler
 
-_MENTION = re.compile(r"^@([A-Za-z0-9][A-Za-z0-9_-]{0,63})\s+(.+)$", re.DOTALL)
+_MENTION = re.compile(r"^@(\S+)\s+(.+)$", re.DOTALL)
 
 
 class ChatOps:
@@ -41,9 +42,7 @@ class ChatOps:
             return None
         future = self.scheduler.wake(
             agent_name,
-            "UNTRUSTED CHAT MESSAGE BEGIN\n"
-            f"{prompt}\n"
-            "UNTRUSTED CHAT MESSAGE END",
+            encode_untrusted("CHAT MESSAGE", prompt),
             message.get("channel", "#general"),
         )
         self.futures.append(future)
@@ -54,7 +53,10 @@ class ChatOps:
 
     def start(self) -> None:
         if self._unsubscribe is None:
-            self._unsubscribe = self.bus.subscribe(CHAT_MESSAGE, self._on_event)
+            self._unsubscribe = self.bus.subscribe(
+                CHAT_MESSAGE, self._on_event,
+                subscriber_id="quarterdeck.chatops" if self.bus.store is not None else None,
+            )
 
     def stop(self) -> None:
         if self._unsubscribe is not None:

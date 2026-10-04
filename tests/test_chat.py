@@ -65,3 +65,8 @@ def test_post_publishes_chat_message_event(tmp_path):
     assert len(got) == 1
     assert got[0].payload["author"] == "scout"
     assert got[0].payload["text"] == "reporting in"
+
+
+def test_persisted_message_shape_remains_v0_compatible(chat):
+    message = chat.post("#general", "you", "hello")
+    assert set(message) == {"ts", "channel", "author", "text"}

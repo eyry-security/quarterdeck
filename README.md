@@ -1,148 +1,184 @@
 # quarterdeck
 
-> The command deck of the Eyry suite: wake and sleep Pinnace agents, keep their
-> identity, and give them a shared chat.
+> The command deck of the Eyry suite: persistent agent identity, event-driven orchestration, and ChatOps.
 
-Part of **[Eyry](https://eyry.io)** — open-source, agentic recon and offensive
-security tooling for bug bounty hunters, red teamers, and pentesters.
-Quarterdeck is the control plane that turns one-off Pinnace agent runs into a
-persistent, social, scheduled system.
+Quarterdeck turns one-off [Pinnace](https://github.com/eyry-security/pinnace) runs into named agents that wake on schedules, events, or explicit chat mentions. It keeps local state inspectable, routes Aplomado findings into alerts or agent work, and puts results back into IRC-style channels.
 
-## What it does
+## Status
 
-- **Wake/sleep scheduling.** Agents don't burn resources idling; Quarterdeck
-  wakes them on a timer, hands them a prompt, and puts them back to sleep when
-  the run finishes.
-- **Identity and lifecycle.** Named agents (model, system prompt, sandbox,
-  max turns) with a persisted lifecycle state: `idle` or `working`.
-- **Shared chat.** IRC-style channels (`#general` by default). Agents post
-  summaries when they wake; you post with `--say`. Append-only JSONL, one file
-  per channel.
-- **Events.** A tiny in-process pub/sub (`tick`, `chat_message`, `webhook`) for
-  wiring reactions to things that happen.
+**Single-node v0.** Agent registry, interval scheduler, durable event history, exact-type rules, local ChatOps, and Aplomado event ingestion work. Authenticated Slack/Discord connectors, cron, SQLite/Postgres migration, and multi-node workers are later work; Quarterdeck does not ship an insecure webhook stub.
 
 ## Install
 
 ```bash
-pip install quarterdeck          # or: pip install -e .  (from this repo)
+pip install -e ../pinnace
+pip install -e '.[pinnace]'
 ```
 
-Running agents needs the agent harness too:
+Pinnace resolves the model. The default is `anthropic:claude-opus-4-6`; set `PINNACE_MODEL` or pass `--model provider:model` when spawning an agent.
 
-```bash
-pip install pinnace              # or: pip install -e ../pinnace  (local dev)
-```
-
-Everything else (registry, chat, scheduler) works without it. No API keys, no
-Docker, no Postgres needed for v0.
-
-## Quickstart
-
-Spawn an agent:
+## Start a crew
 
 ```bash
 quarterdeck spawn --name scout \
-  --system "You watch our scope for new hosts and report anything interesting." \
-  --model anthropic:claude-sonnet-4-5 --sandbox docker
-```
+  --system "Watch the supplied scope and report evidence, not guesses."
 
-Talk to the crew:
+# One scheduled wake per hour
+quarterdeck spawn --name reporter \
+  --system "Summarize supplied security events." \
+  --interval 3600 --prompt "Review the latest status, {agent_name}."
 
-```bash
-quarterdeck chat --say "scout: give me a status update"
-quarterdeck chat            # read recent history
-quarterdeck chat -n 50 --channel '#alerts'
-```
-
-Schedule it to wake every hour with a prompt template (`{agent_name}` renders):
-
-```bash
-quarterdeck spawn --name scout \
-  --system "You watch our scope for new hosts." \
-  --interval 3600 \
-  --prompt "Check the scope for new hosts and summarize anything worth a look, {agent_name}."
-```
-
-Start the control plane. Scheduled agents wake, work in a Pinnace sandbox, and
-post summaries to `#general`. Ctrl-C sleeps everything:
-
-```bash
+quarterdeck list
 quarterdeck run
 ```
 
-See the roster and retire agents:
+`quarterdeck run` stays active even when no schedules exist so in-process chat/event routing remains available. Ctrl-C stops new work, cancels queued wakes, and waits up to the shutdown grace period for active work.
+
+## Run and chat
 
 ```bash
-quarterdeck list
-quarterdeck forget --name scout
+# One explicit run
+quarterdeck wake --agent scout --prompt "Summarize current work"
+
+# Ordinary chat is stored but does not wake anything
+quarterdeck chat --say "morning crew"
+
+# An explicit human mention wakes exactly one named agent
+quarterdeck chat --channel '#ops' --say '@scout give me a status update'
+quarterdeck chat --channel '#ops' -n 50
 ```
 
-State lives in `~/.quarterdeck` (`$QUARTERDECK_HOME` overrides): `agents.json`,
-`schedules.json`, and `chat/*.jsonl`.
+Only messages authored as the local human (`you`) are routed. Agent and Quarterdeck-authored messages never trigger another agent, preventing self-echo and agent-to-agent chat loops. Routed text is base64-encoded and labeled as untrusted data before it reaches Pinnace, so message text cannot forge prompt boundaries.
 
-## Concepts
+Local-sandbox agents execute model-generated commands on the host. Unattended and one-shot runs refuse them unless `--allow-local` is explicit. Docker is the normal runtime.
 
-**Wake/sleep.** An agent is a Pinnace config plus a state. Quarterdeck's
-scheduler wakes an agent when its interval elapses: state goes `working`, a
-worker thread runs the agent's prompt through Pinnace, and a summary is posted
-to chat. Then the agent sleeps (`idle`). While idle an agent costs nothing —
-no model calls, no containers.
+## Scheduling and sessions
 
-**Identity.** `spawn` registers the agent's config (model ref, system prompt,
-sandbox kind, max turns) under a name. The name is how you address it in chat
-and how the scheduler finds it. `forget` retires it and drops its schedules.
+Quarterdeck uses a bounded worker pool and a lock per agent, so two schedules, events, or chat messages can queue concurrently without running the same Pinnace session at the same time. Each run emits:
 
-**Chat.** The shared coordination surface for agents *and* humans. Scheduled
-agents post wake summaries as themselves (the author is the agent's name);
-errors post there too, never into the void. One append-only JSONL log per
-channel keeps history inspectable with any tool.
+- `agent.run.requested` with run, agent, schedule, and channel IDs.
+- `agent.run.completed` with the same run ID and succeeded/failed status.
 
-**Events.** `EventBus` is a tiny synchronous pub/sub with three event types:
-`tick` (scheduler heartbeat), `chat_message` (anything posted), `webhook`
-(stub for later inbound receivers). v0 publishes; later versions will let you
-subscribe handlers from config.
+Pinnace sessions live below `$QUARTERDECK_HOME/pinnace/sessions` (default `~/.quarterdeck/pinnace/sessions`) and use collision-resistant keys derived from the full legacy-compatible agent name. In-process locks and host file locks serialize the same session across independent Quarterdeck commands. Sandboxes close on success, model failure, and agent-construction failure.
 
-## v0 vs later
+## Durable events and rules
 
-**In v0:** interval-based scheduling in seconds (no cron parsing), local JSON
-state (`~/.quarterdeck`), IRC-style chat on the filesystem, one chat channel
-per JSONL file, thread-per-wake execution.
+Events are committed to `events.jsonl` before in-process delivery:
 
-**Later:** Postgres for agent state/memory and the event log, cron-style
-schedules, Slack/Discord ChatOps (agents in your channels, alerts, "what's
-new?", "scan this"), webhook receivers that wake agents, and full recon
-pipeline orchestration (Foretop → Purser → Vedette → Aplomado) as a scheduled
-workload.
+```json
+{
+  "type": "host.probed",
+  "payload": {"host": "api.example.com", "status": 200},
+  "ts": 1791158400.0,
+  "id": "producer-event-id",
+  "source": "vedette",
+  "schema_version": 1
+}
+```
 
-## API (for other tools in the suite)
+IDs are claimed under a host file lock, fsynced before delivery, and deduplicated across process restarts and concurrent local commands. Handler outcomes are recorded in `event-deliveries.jsonl`; failed handlers can be replayed through `EventBus.replay()`. Only schema version 1 is accepted. The service remains intentionally single-host; distributed leases are not claimed.
+
+```bash
+quarterdeck event --type host.probed \
+  --id probe-123 --source vedette \
+  --payload '{"host":"api.example.com","status":200}'
+quarterdeck events --type host.probed --json
+
+quarterdeck rule-add --name review-new-host \
+  --event host.probed --action agent --agent scout \
+  --prompt 'Review this event: {event_json}' --channel '#ops'
+quarterdeck rule-add --name finding-alerts \
+  --event aplomado.scan.completed --action alert --channel '#alerts'
+quarterdeck rule-list
+quarterdeck rule-remove --name review-new-host
+```
+
+Rule payloads are base64-encoded and labeled as untrusted model data. Causation IDs and a four-hop ceiling prevent event→agent→completion rule cycles from running forever. Filters are exact top-level payload equality in the Python API; richer policy comes later.
+
+## Aplomado events
+
+Quarterdeck consumes Aplomado’s producer-owned envelope without importing the Aplomado package:
+
+```json
+{
+  "type": "aplomado.scan.completed",
+  "id": "<uuid4>",
+  "producer": "aplomado",
+  "timestamp": "<ISO-8601 UTC>",
+  "data": {
+    "target": "https://api.example.com",
+    "summary": "One confirmed issue.",
+    "scanned_at": "<ISO-8601>",
+    "findings": [],
+    "ok": true,
+    "error": null,
+    "metadata": {}
+  }
+}
+```
+
+The adapter validates the required outer fields, UUID4 identity, and minimum report shape; preserves the original producer document plus unknown report/finding fields; and uses the producer UUID4 for deduplication. Alert rules summarize severity counts and include high/critical titles without rewriting the source report.
+
+```bash
+# File or live JSONL pipeline
+quarterdeck ingest-aplomado --file findings-events.jsonl
+aplomado scan --target https://api.example.com --event-sink - \
+  | quarterdeck ingest-aplomado --file -
+```
+
+Malformed lines are reported and later events continue. Duplicate producer IDs are retained once.
+
+## State
+
+`$QUARTERDECK_HOME` defaults to `~/.quarterdeck`:
+
+- `agents.json` — named Pinnace configuration and lifecycle state.
+- `schedules.json` — interval schedules.
+- `rules.json` — exact event rules.
+- `events.jsonl` — typed event history and run lifecycle.
+- `event-deliveries.jsonl` — handler success/failure attempts for replay.
+- `chat/<channel>.jsonl` — local channel history.
+- `pinnace/sessions/` — resumable agent transcripts.
+
+Agent names remain backward-compatible with v0. Quarterdeck derives a collision-resistant hash for filesystem locks and Pinnace session IDs, so legacy names such as `team/scout` and `team_scout` cannot collapse onto one transcript.
+
+## CLI
+
+```text
+quarterdeck spawn|list|forget
+quarterdeck wake
+quarterdeck chat
+quarterdeck run
+quarterdeck event|events
+quarterdeck rule-add|rule-list|rule-remove
+quarterdeck ingest-aplomado
+```
+
+Existing v0 `spawn`, `list`, `chat`, `run`, and `forget` state files and command shapes remain supported.
+
+## Python API
 
 ```python
-from quarterdeck import AgentRegistry, Chat, EventBus, Scheduler
+from quarterdeck import AgentRegistry, Chat, EventBus, EventStore, Scheduler
 
-reg = AgentRegistry()                       # ~/.quarterdeck/agents.json
-reg.spawn("scout", "watch the horizon", model="anthropic:claude-sonnet-4-5")
+home = "/srv/quarterdeck"
+bus = EventBus(store=EventStore(home))
+registry = AgentRegistry(home=home)
+chat = Chat(home=home, bus=bus)
+scheduler = Scheduler(registry, chat, bus=bus, home=home)
 
-chat = Chat(bus=EventBus())
-chat.post("#general", "you", "morning, crew")
-chat.history("#general", 20)
-
-sched = Scheduler(reg, chat)                # runner=PinnaceAgent by default
-sched.add("morning-watch", "scout", 3600, "check the horizon, {agent_name}")
-sched.start()                               # Ctrl-C / sched.stop() to end
+registry.spawn("scout", "Review supplied events and report evidence.")
+scheduler.wake("scout", "Check status", "#ops").result()
+scheduler.stop()
 ```
 
-The `Scheduler` takes an injectable `runner(agent, prompt) -> summary` callable,
-so you can script fake agents in tests.
+The scheduler accepts an injectable `runner(agent, prompt) -> summary`, so all orchestration tests run without Docker, API keys, or network.
 
-## The Eyry suite
+## Tests
 
-- **Vedette**: fast, multi-threaded HTTP prober (Rust)
-- **Pinnace**: general multi-turn agent runtime with compaction, tools, and a
-  Docker sandbox — Quarterdeck runs *these* agents
-- **Aplomado**: AI security scanner and reviewer built on Pinnace
-- **Foretop**: configurable producer of new hosts from pluggable feeds
-- **Purser**: Redis-backed priority queue and work distributor (hot/warm/cold/DLQ)
-- **Quarterdeck**: this repo — agent control plane, scheduler, events, chat
+```bash
+pytest
+```
 
 ## License
 

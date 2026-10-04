@@ -17,14 +17,16 @@ import json
 import threading
 import time
 import uuid
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
-from .agent_registry import IDLE, WORKING, Agent, AgentRegistry, home_dir
+from .agent_registry import IDLE, WORKING, Agent, AgentRegistry, agent_key, home_dir
 from .chat import DEFAULT_CHANNEL, Chat
 from .events import RUN_COMPLETED, RUN_REQUESTED, TICK, Event, EventBus
+from .executor import DaemonExecutor
+from .locking import file_lock
 
 Runner = Callable[[Agent, str], str]
 """A runner wakes an agent with a prompt and returns a summary string."""
@@ -33,6 +35,15 @@ PINNACE_INSTALL_HINT = (
     "pinnace is not installed; quarterdeck can't run agents without it: "
     "pip install pinnace (or pip install -e ../pinnace for local dev)"
 )
+
+
+class RunSummary(str):
+    """Display summary carrying the complete structured Pinnace result."""
+
+    def __new__(cls, text: str, result: dict):
+        value = super().__new__(cls, text)
+        value.result = result
+        return value
 
 
 def default_runner(agent: Agent, prompt: str, *, home: Path | None = None,
@@ -52,18 +63,18 @@ def default_runner(agent: Agent, prompt: str, *, home: Path | None = None,
         if agent.sandbox == "docker"
         else LocalSandbox(unsafe_ok=True)
     )
-    session_root = (Path(home) if home else home_dir()) / "pinnace"
-    config = AgentConfig.resolve(
-        model=agent.model,
-        sandbox=sandbox,
-        system_prompt=agent.system_prompt,
-        max_turns=agent.max_turns,
-        session_store=SessionStore(session_root),
-        session_id=f"agent-{agent.name}",
-        log=lambda message: None,
-    )
-    runner = PinnaceAgent.from_config(config)
     try:
+        session_root = (Path(home) if home else home_dir()) / "pinnace"
+        config = AgentConfig.resolve(
+            model=agent.model,
+            sandbox=sandbox,
+            system_prompt=agent.system_prompt,
+            max_turns=agent.max_turns,
+            session_store=SessionStore(session_root),
+            session_id=f"agent-{agent_key(agent.name)}",
+            log=lambda message: None,
+        )
+        runner = PinnaceAgent.from_config(config)
         result = runner.run(prompt)
     finally:
         sandbox.close()
@@ -81,7 +92,14 @@ def default_runner(agent: Agent, prompt: str, *, home: Path | None = None,
         summary += f"\n{final}"
     if structured:
         summary += f"\nstructured: {structured}"
-    return summary
+    complete_result = (
+        result.to_dict() if hasattr(result, "to_dict") else {
+            "final": result.final,
+            "structured": result.structured,
+            "turns": result.turns,
+        }
+    )
+    return RunSummary(summary, complete_result)
 
 
 @dataclass
@@ -133,10 +151,12 @@ class Scheduler:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
-        self._pool = ThreadPoolExecutor(
-            max_workers=max_workers, thread_name_prefix="quarterdeck-worker"
+        self._pool = DaemonExecutor(
+            max_workers=max_workers, name_prefix="quarterdeck-worker"
         )
         self._agent_locks: dict[str, threading.Lock] = {}
+        self._futures: set[Future] = set()
+        self._accepting = True
 
     # -- persistence ------------------------------------------------------
 
@@ -207,11 +227,12 @@ class Scheduler:
         self._thread.start()
 
     def stop(self, timeout: float = 10.0) -> None:
+        self._accepting = False
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=timeout)
             self._thread = None
-        self._pool.shutdown(wait=True, cancel_futures=False)
+        self._pool.shutdown(timeout=timeout, cancel_futures=True)
 
     def _loop(self) -> None:
         while not self._stop.is_set():
@@ -234,21 +255,28 @@ class Scheduler:
             self._save()
         return fired
 
-    def _fire(self, entry: ScheduleEntry) -> Future:
+    def _fire(self, entry: ScheduleEntry, cause: dict | None = None) -> Future:
+        if not self._accepting:
+            raise SchedulerError("scheduler is stopping and no longer accepts work")
         run_id = str(uuid.uuid4())
-        self.bus.publish(Event(
-            type=RUN_REQUESTED,
-            payload={
-                "run_id": run_id,
-                "agent": entry.agent_name,
-                "schedule": entry.name,
-                "channel": entry.channel,
-            },
-        ))
-        return self._pool.submit(self._wake, entry, run_id)
+        cause = cause or {}
+        lifecycle = {
+            "run_id": run_id,
+            "agent": entry.agent_name,
+            "schedule": entry.name,
+            "channel": entry.channel,
+            "causation_id": cause.get("event_id"),
+            "hop_count": int(cause.get("hop_count", 0)),
+        }
+        self.bus.publish(Event(type=RUN_REQUESTED, payload=lifecycle))
+        future = self._pool.submit(self._wake, entry, run_id, lifecycle)
+        self._futures.add(future)
+        future.add_done_callback(self._futures.discard)
+        return future
 
     def wake(self, agent_name: str, prompt: str,
-             channel: str = DEFAULT_CHANNEL) -> Future:
+             channel: str = DEFAULT_CHANNEL,
+             cause: dict | None = None) -> Future:
         """Queue one explicit wake and return its completion future."""
         if not self.registry.exists(agent_name):
             raise SchedulerError(f"no agent named {agent_name!r}")
@@ -259,27 +287,30 @@ class Scheduler:
             prompt=prompt,
             channel=channel,
         )
-        return self._fire(entry)
+        return self._fire(entry, cause=cause)
 
-    def _wake(self, entry: ScheduleEntry, run_id: str) -> None:
+    def _wake(self, entry: ScheduleEntry, run_id: str, lifecycle: dict) -> None:
         agent = self.registry.get(entry.agent_name)
         with self._lock:
             agent_lock = self._agent_locks.setdefault(agent.name, threading.Lock())
-        with agent_lock:
+        with agent_lock, file_lock(
+            self.home / "locks" / f"agent-{agent_key(agent.name)}.lock"
+        ):
             self.registry.set_state(agent.name, WORKING)
             prompt = entry.prompt.replace("{agent_name}", agent.name)
             try:
                 summary = self.runner(agent, prompt)
                 self.chat.post(entry.channel, agent.name, f"☀️ woke up: {summary}")
+                completion = {
+                    **lifecycle,
+                    "status": "succeeded",
+                    "summary": str(summary)[:4000],
+                }
+                if isinstance(summary, RunSummary):
+                    completion["result"] = summary.result
                 self.bus.publish(Event(
                     type=RUN_COMPLETED,
-                    payload={
-                        "run_id": run_id,
-                        "agent": agent.name,
-                        "status": "succeeded",
-                        "summary": summary[:4000],
-                        "channel": entry.channel,
-                    },
+                    payload=completion,
                 ))
             except Exception as e:  # agent errors go to chat, not to the void
                 self.chat.post(entry.channel, agent.name,
@@ -287,11 +318,9 @@ class Scheduler:
                 self.bus.publish(Event(
                     type=RUN_COMPLETED,
                     payload={
-                        "run_id": run_id,
-                        "agent": agent.name,
+                        **lifecycle,
                         "status": "failed",
                         "error": f"{type(e).__name__}: {e}"[:4000],
-                        "channel": entry.channel,
                     },
                 ))
             finally:

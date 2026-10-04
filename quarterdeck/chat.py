@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import re
 import time
-import uuid
 from pathlib import Path
 from threading import Lock
 
@@ -49,7 +48,6 @@ class Chat:
         if len(text) > 20_000:
             raise ValueError("message text exceeds 20000 characters")
         msg = {
-            "id": str(uuid.uuid4()),
             "ts": time.time(),
             "channel": channel,
             "author": author,

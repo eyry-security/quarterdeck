@@ -11,7 +11,10 @@ from .agent_registry import AgentRegistry
 from .chat import DEFAULT_CHANNEL, Chat
 from .events import APLOMADO_SCAN_COMPLETED, Event, EventBus
 from .integrations import format_aplomado_alert
+from .security import encode_untrusted
 from .scheduler import Scheduler
+
+MAX_EVENT_HOPS = 4
 
 
 @dataclass
@@ -100,7 +103,10 @@ class RuleEngine:
     def start(self) -> None:
         event_types = {rule.event_type for rule in self.store.list()}
         self._unsubscribers = [
-            self.bus.subscribe(event_type, self.handle) for event_type in event_types
+            self.bus.subscribe(
+                event_type, self.handle, subscriber_id=f"quarterdeck.rules:{event_type}"
+            )
+            for event_type in event_types
         ]
 
     def stop(self) -> None:
@@ -123,13 +129,15 @@ class RuleEngine:
                 continue
             if not self.registry.exists(rule.agent_name or ""):
                 continue
+            hop_count = int(event.payload.get("hop_count", 0))
+            if hop_count >= MAX_EVENT_HOPS:
+                continue
             payload = json.dumps(event.payload, sort_keys=True)[:20_000]
             rendered = rule.prompt.replace("{event_type}", event.type).replace(
                 "{event_json}", payload
             )
-            prompt = (
-                "UNTRUSTED EVENT BEGIN\n"
-                f"{rendered}\n"
-                "UNTRUSTED EVENT END"
+            prompt = encode_untrusted("EVENT", rendered)
+            self.scheduler.wake(
+                rule.agent_name or "", prompt, rule.channel,
+                cause={"event_id": event.id, "hop_count": hop_count + 1},
             )
-            self.scheduler.wake(rule.agent_name or "", prompt, rule.channel)

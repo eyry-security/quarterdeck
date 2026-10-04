@@ -109,8 +109,8 @@ def build_parser() -> argparse.ArgumentParser:
     remove = sub.add_parser("rule-remove", help="remove an event rule")
     remove.add_argument("--name", required=True)
 
-    ingest = sub.add_parser("ingest-aplomado", help="persist and route one Aplomado event")
-    ingest.add_argument("--file", required=True)
+    ingest = sub.add_parser("ingest-aplomado", help="persist and route Aplomado event JSONL")
+    ingest.add_argument("--file", required=True, help="event JSONL path, or '-' for stdin")
     ingest.add_argument("--allow-local", action="store_true")
     return parser
 
@@ -289,17 +289,42 @@ def cmd_rule_remove(args) -> int:
 
 
 def cmd_ingest_aplomado(args) -> int:
+    if args.file == "-":
+        source = sys.stdin
+        close_source = False
+    else:
+        try:
+            source = Path(args.file).open(encoding="utf-8")
+        except OSError as exc:
+            _log(f"can't read Aplomado events: {exc}")
+            return 2
+        close_source = True
+
+    seen = 0
+    failed = False
     try:
-        document = json.loads(Path(args.file).read_text(encoding="utf-8"))
-        event = parse_aplomado_event(document)
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
-        _log(f"invalid Aplomado report: {exc}")
+        for line_number, line in enumerate(source, 1):
+            if not line.strip():
+                continue
+            seen += 1
+            try:
+                event = parse_aplomado_event(json.loads(line))
+            except (json.JSONDecodeError, ValueError) as exc:
+                _log(f"invalid Aplomado event on line {line_number}: {exc}")
+                failed = True
+                continue
+            if not _route_event(args, event):
+                _log(f"duplicate event {event.id}")
+                failed = True
+                continue
+            print(event.id)
+    finally:
+        if close_source:
+            source.close()
+    if not seen:
+        _log("no Aplomado events found")
         return 2
-    if not _route_event(args, event):
-        _log(f"duplicate event {event.id}")
-        return 1
-    print(event.id)
-    return 0
+    return 1 if failed else 0
 
 
 _DISPATCH = {

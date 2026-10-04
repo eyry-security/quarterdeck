@@ -84,3 +84,67 @@ def test_pinnace_kwargs(reg):
     assert kw["model"] is None  # PinnaceAgent falls back to $PINNACE_MODEL
     assert kw["system_prompt"] == "watch"
     assert kw["max_turns"] == 7
+
+
+def test_legacy_agent_names_remain_supported_and_have_distinct_keys(tmp_path):
+    from quarterdeck.agent_registry import agent_key
+
+    registry = AgentRegistry(home=tmp_path)
+    registry.spawn("team/scout", "watch")
+    registry.spawn("team_scout", "watch")
+    assert registry.exists("team/scout")
+    assert agent_key("team/scout") != agent_key("team_scout")
+
+
+def test_parallel_registry_instances_do_not_lose_updates(tmp_path):
+    import threading
+
+    first = AgentRegistry(home=tmp_path)
+    first.spawn("one", "x")
+    first.spawn("two", "x")
+    second = AgentRegistry(home=tmp_path)
+    barrier = threading.Barrier(2)
+
+    def update(registry, name):
+        barrier.wait()
+        registry.set_state(name, "working")
+
+    threads = [
+        threading.Thread(target=update, args=(first, "one")),
+        threading.Thread(target=update, args=(second, "two")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2)
+    final = AgentRegistry(home=tmp_path)
+    assert final.get("one").state == "working"
+    assert final.get("two").state == "working"
+
+
+def _process_registry_update(home, name, start):
+    start.wait()
+    AgentRegistry(home=home).set_state(name, "working")
+
+
+def test_registry_updates_are_process_safe(tmp_path):
+    import multiprocessing
+
+    registry = AgentRegistry(home=tmp_path)
+    registry.spawn("one", "x")
+    registry.spawn("two", "x")
+    context = multiprocessing.get_context("spawn")
+    start = context.Event()
+    processes = [
+        context.Process(target=_process_registry_update, args=(tmp_path, name, start))
+        for name in ("one", "two")
+    ]
+    for process in processes:
+        process.start()
+    start.set()
+    for process in processes:
+        process.join(timeout=2)
+        assert process.exitcode == 0
+    final = AgentRegistry(home=tmp_path)
+    assert final.get("one").state == "working"
+    assert final.get("two").state == "working"
