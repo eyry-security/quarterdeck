@@ -14,7 +14,7 @@ keywords = ["agent", "scheduler", "orchestration", "chatops", "chat", "autonomou
 dependencies = []
 
 [project.optional-dependencies]
-pinnace = ["pinnace>=0.1.0"]
+pinnace = ["pinnace>=0.1.0,<0.2.0"]
 dev = ["pytest>=8.0"]
 
 [project.urls]

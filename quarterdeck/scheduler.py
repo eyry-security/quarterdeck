@@ -16,13 +16,15 @@ from __future__ import annotations
 import json
 import threading
 import time
+import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
 from .agent_registry import IDLE, WORKING, Agent, AgentRegistry, home_dir
 from .chat import DEFAULT_CHANNEL, Chat
-from .events import TICK, Event, EventBus
+from .events import RUN_COMPLETED, RUN_REQUESTED, TICK, Event, EventBus
 
 Runner = Callable[[Agent, str], str]
 """A runner wakes an agent with a prompt and returns a summary string."""
@@ -33,27 +35,34 @@ PINNACE_INSTALL_HINT = (
 )
 
 
-def default_runner(agent: Agent, prompt: str) -> str:
-    """Run the agent's PinnaceAgent once and return a summary string.
-
-    Pinnace is imported here, lazily, so the rest of quarterdeck works
-    without it installed. Clear error instead of a traceback when missing.
-    """
+def default_runner(agent: Agent, prompt: str, *, home: Path | None = None,
+                   allow_local: bool = False) -> str:
+    """Run one agent through the approved Pinnace configuration API."""
     try:
-        from pinnace import PinnaceAgent
-        from pinnace import DockerSandbox, LocalSandbox
+        from pinnace import AgentConfig, DockerSandbox, LocalSandbox, PinnaceAgent, SessionStore
     except ImportError as e:
         raise RuntimeError(PINNACE_INSTALL_HINT) from e
 
-    sandbox = DockerSandbox() if agent.sandbox == "docker" else LocalSandbox(unsafe_ok=True)
-    runner = PinnaceAgent(
+    if agent.sandbox == "local" and not allow_local:
+        raise RuntimeError(
+            "local sandbox is disabled for unattended runs; enable it explicitly for development"
+        )
+    sandbox = (
+        DockerSandbox()
+        if agent.sandbox == "docker"
+        else LocalSandbox(unsafe_ok=True)
+    )
+    session_root = (Path(home) if home else home_dir()) / "pinnace"
+    config = AgentConfig.resolve(
         model=agent.model,
+        sandbox=sandbox,
         system_prompt=agent.system_prompt,
         max_turns=agent.max_turns,
-        sandbox=sandbox,
-        session_id=f"quarterdeck-{agent.name}",
-        log=lambda m: None,  # keep scheduler output clean; transcript is summarized
+        session_store=SessionStore(session_root),
+        session_id=f"agent-{agent.name}",
+        log=lambda message: None,
     )
+    runner = PinnaceAgent.from_config(config)
     try:
         result = runner.run(prompt)
     finally:
@@ -105,19 +114,29 @@ class Scheduler:
     def __init__(self, registry: AgentRegistry, chat: Chat,
                  bus: EventBus | None = None,
                  runner: Runner | None = None,
-                 home: Path | None = None):
+                 home: Path | None = None,
+                 max_workers: int = 4,
+                 allow_local: bool = False):
         self.registry = registry
         self.chat = chat
         self.bus = bus or EventBus()
-        self.runner = runner or default_runner
         self.home = Path(home) if home else home_dir()
         self.home.mkdir(parents=True, exist_ok=True)
+        self.runner = runner or (
+            lambda agent, prompt: default_runner(
+                agent, prompt, home=self.home, allow_local=allow_local
+            )
+        )
         self._file = self.home / "schedules.json"
         self._entries: dict[str, ScheduleEntry] = {}
         self._load()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        self._pool = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="quarterdeck-worker"
+        )
+        self._agent_locks: dict[str, threading.Lock] = {}
 
     # -- persistence ------------------------------------------------------
 
@@ -192,6 +211,7 @@ class Scheduler:
         if self._thread:
             self._thread.join(timeout=timeout)
             self._thread = None
+        self._pool.shutdown(wait=True, cancel_futures=False)
 
     def _loop(self) -> None:
         while not self._stop.is_set():
@@ -214,20 +234,35 @@ class Scheduler:
             self._save()
         return fired
 
-    def _fire(self, entry: ScheduleEntry) -> None:
-        t = threading.Thread(target=self._wake, args=(entry,),
-                             name=f"quarterdeck-wake-{entry.agent_name}", daemon=True)
-        t.start()
+    def _fire(self, entry: ScheduleEntry) -> Future:
+        return self._pool.submit(self._wake, entry)
+
+    def wake(self, agent_name: str, prompt: str,
+             channel: str = DEFAULT_CHANNEL) -> Future:
+        """Queue one explicit wake and return its completion future."""
+        if not self.registry.exists(agent_name):
+            raise SchedulerError(f"no agent named {agent_name!r}")
+        entry = ScheduleEntry(
+            name=f"manual-{time.time_ns()}",
+            agent_name=agent_name,
+            interval=0,
+            prompt=prompt,
+            channel=channel,
+        )
+        return self._fire(entry)
 
     def _wake(self, entry: ScheduleEntry) -> None:
         agent = self.registry.get(entry.agent_name)
-        self.registry.set_state(agent.name, WORKING)
-        prompt = entry.prompt.format(agent_name=agent.name)
-        try:
-            summary = self.runner(agent, prompt)
-            self.chat.post(entry.channel, agent.name, f"☀️ woke up: {summary}")
-        except Exception as e:  # agent errors go to chat, not to the void
-            self.chat.post(entry.channel, agent.name,
-                           f"⚠️ run failed: {type(e).__name__}: {e}")
-        finally:
-            self.registry.set_state(agent.name, IDLE)
+        with self._lock:
+            agent_lock = self._agent_locks.setdefault(agent.name, threading.Lock())
+        with agent_lock:
+            self.registry.set_state(agent.name, WORKING)
+            prompt = entry.prompt.replace("{agent_name}", agent.name)
+            try:
+                summary = self.runner(agent, prompt)
+                self.chat.post(entry.channel, agent.name, f"☀️ woke up: {summary}")
+            except Exception as e:  # agent errors go to chat, not to the void
+                self.chat.post(entry.channel, agent.name,
+                               f"⚠️ run failed: {type(e).__name__}: {e}")
+            finally:
+                self.registry.set_state(agent.name, IDLE)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -21,6 +22,7 @@ WORKING = "working"
 STATES = (IDLE, WORKING)
 
 SANDBOXES = ("docker", "local")
+_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
 def home_dir() -> Path:
@@ -45,7 +47,16 @@ class Agent:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Agent":
-        return cls(**{f: d.get(f) for f in _FIELDS})
+        return cls(
+            name=d["name"],
+            system_prompt=d["system_prompt"],
+            model=d.get("model"),
+            sandbox=d.get("sandbox", "docker"),
+            max_turns=d.get("max_turns", 30),
+            state=d.get("state", IDLE),
+            created_at=d.get("created_at", 0.0),
+            updated_at=d.get("updated_at", 0.0),
+        )
 
     def pinnace_kwargs(self) -> dict:
         """Kwargs for PinnaceAgent(model=..., system_prompt=..., max_turns=...)."""
@@ -54,10 +65,6 @@ class Agent:
             "system_prompt": self.system_prompt,
             "max_turns": self.max_turns,
         }
-
-
-_FIELDS = ("name", "system_prompt", "model", "sandbox", "max_turns", "state",
-           "created_at", "updated_at")
 
 
 class RegistryError(Exception):
@@ -86,7 +93,7 @@ class AgentRegistry:
         for entry in data.get("agents", []):
             try:
                 agent = Agent.from_dict(entry)
-            except TypeError:
+            except (KeyError, TypeError):
                 continue
             self._agents[agent.name] = agent
 
@@ -100,8 +107,11 @@ class AgentRegistry:
 
     def spawn(self, name: str, system_prompt: str, *, model: str | None = None,
               sandbox: str = "docker", max_turns: int = 30) -> Agent:
-        if not name or not name.strip():
-            raise RegistryError("agent name must not be empty")
+        if not isinstance(name, str) or not _NAME.fullmatch(name):
+            raise RegistryError(
+                "agent name must start with an alphanumeric character and contain "
+                "only alphanumerics, '-' or '_' (max 64 characters)"
+            )
         if name in self._agents:
             raise RegistryError(f"agent {name!r} already exists")
         if sandbox not in SANDBOXES:

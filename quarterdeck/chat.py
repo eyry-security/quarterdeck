@@ -9,7 +9,9 @@ from __future__ import annotations
 import json
 import re
 import time
+import uuid
 from pathlib import Path
+from threading import Lock
 
 from .agent_registry import home_dir
 from .events import CHAT_MESSAGE, Event, EventBus
@@ -32,6 +34,7 @@ class Chat:
         self.dir = self.home / "chat"
         self.dir.mkdir(parents=True, exist_ok=True)
         self.bus = bus
+        self._lock = Lock()
 
     def _file(self, channel: str) -> Path:
         return self.dir / (sanitize_channel(channel).lstrip("#") + ".jsonl")
@@ -41,9 +44,20 @@ class Chat:
         channel = sanitize_channel(channel)
         if not author or not author.strip():
             raise ValueError("author must not be empty")
-        msg = {"ts": time.time(), "channel": channel, "author": author, "text": text}
-        with open(self._file(channel), "a", encoding="utf-8") as f:
-            f.write(json.dumps(msg) + "\n")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("message text must not be empty")
+        if len(text) > 20_000:
+            raise ValueError("message text exceeds 20000 characters")
+        msg = {
+            "id": str(uuid.uuid4()),
+            "ts": time.time(),
+            "channel": channel,
+            "author": author,
+            "text": text,
+        }
+        with self._lock:
+            with open(self._file(channel), "a", encoding="utf-8") as f:
+                f.write(json.dumps(msg) + "\n")
         if self.bus is not None:
             self.bus.publish(Event(type=CHAT_MESSAGE, payload=dict(msg)))
         return msg
