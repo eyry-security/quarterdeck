@@ -13,7 +13,7 @@ from .agent_registry import AgentRegistry, RegistryError, home_dir
 from .chat import DEFAULT_CHANNEL, Chat
 from .chatops import ChatOps
 from .events import Event, EventBus, EventStore
-from .integrations import aplomado_event
+from .integrations import parse_aplomado_event
 from .rules import Rule, RuleEngine, RuleError, RuleStore
 from .scheduler import Scheduler, SchedulerError
 
@@ -109,9 +109,8 @@ def build_parser() -> argparse.ArgumentParser:
     remove = sub.add_parser("rule-remove", help="remove an event rule")
     remove.add_argument("--name", required=True)
 
-    ingest = sub.add_parser("ingest-aplomado", help="persist and route one Aplomado report")
+    ingest = sub.add_parser("ingest-aplomado", help="persist and route one Aplomado event")
     ingest.add_argument("--file", required=True)
-    ingest.add_argument("--id")
     ingest.add_argument("--allow-local", action="store_true")
     return parser
 
@@ -291,8 +290,8 @@ def cmd_rule_remove(args) -> int:
 
 def cmd_ingest_aplomado(args) -> int:
     try:
-        envelope = json.loads(Path(args.file).read_text(encoding="utf-8"))
-        event = aplomado_event(envelope, event_id=args.id)
+        document = json.loads(Path(args.file).read_text(encoding="utf-8"))
+        event = parse_aplomado_event(document)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         _log(f"invalid Aplomado report: {exc}")
         return 2

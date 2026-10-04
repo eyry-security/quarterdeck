@@ -16,7 +16,7 @@ from .events import (
     EventBus,
     EventStore,
 )
-from .integrations import aplomado_event, format_aplomado_alert
+from .integrations import aplomado_event, format_aplomado_alert, parse_aplomado_event
 from .rules import Rule, RuleEngine, RuleStore
 from .scheduler import Scheduler
 
@@ -43,4 +43,5 @@ __all__ = [
     "WEBHOOK",
     "aplomado_event",
     "format_aplomado_alert",
+    "parse_aplomado_event",
 ]

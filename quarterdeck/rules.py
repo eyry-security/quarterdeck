@@ -124,7 +124,12 @@ class RuleEngine:
             if not self.registry.exists(rule.agent_name or ""):
                 continue
             payload = json.dumps(event.payload, sort_keys=True)[:20_000]
-            prompt = rule.prompt.replace("{event_type}", event.type).replace(
+            rendered = rule.prompt.replace("{event_type}", event.type).replace(
                 "{event_json}", payload
+            )
+            prompt = (
+                "UNTRUSTED EVENT BEGIN\n"
+                f"{rendered}\n"
+                "UNTRUSTED EVENT END"
             )
             self.scheduler.wake(rule.agent_name or "", prompt, rule.channel)

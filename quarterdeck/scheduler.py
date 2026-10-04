@@ -235,7 +235,17 @@ class Scheduler:
         return fired
 
     def _fire(self, entry: ScheduleEntry) -> Future:
-        return self._pool.submit(self._wake, entry)
+        run_id = str(uuid.uuid4())
+        self.bus.publish(Event(
+            type=RUN_REQUESTED,
+            payload={
+                "run_id": run_id,
+                "agent": entry.agent_name,
+                "schedule": entry.name,
+                "channel": entry.channel,
+            },
+        ))
+        return self._pool.submit(self._wake, entry, run_id)
 
     def wake(self, agent_name: str, prompt: str,
              channel: str = DEFAULT_CHANNEL) -> Future:
@@ -251,7 +261,7 @@ class Scheduler:
         )
         return self._fire(entry)
 
-    def _wake(self, entry: ScheduleEntry) -> None:
+    def _wake(self, entry: ScheduleEntry, run_id: str) -> None:
         agent = self.registry.get(entry.agent_name)
         with self._lock:
             agent_lock = self._agent_locks.setdefault(agent.name, threading.Lock())
@@ -261,8 +271,28 @@ class Scheduler:
             try:
                 summary = self.runner(agent, prompt)
                 self.chat.post(entry.channel, agent.name, f"☀️ woke up: {summary}")
+                self.bus.publish(Event(
+                    type=RUN_COMPLETED,
+                    payload={
+                        "run_id": run_id,
+                        "agent": agent.name,
+                        "status": "succeeded",
+                        "summary": summary[:4000],
+                        "channel": entry.channel,
+                    },
+                ))
             except Exception as e:  # agent errors go to chat, not to the void
                 self.chat.post(entry.channel, agent.name,
                                f"⚠️ run failed: {type(e).__name__}: {e}")
+                self.bus.publish(Event(
+                    type=RUN_COMPLETED,
+                    payload={
+                        "run_id": run_id,
+                        "agent": agent.name,
+                        "status": "failed",
+                        "error": f"{type(e).__name__}: {e}"[:4000],
+                        "channel": entry.channel,
+                    },
+                ))
             finally:
                 self.registry.set_state(agent.name, IDLE)
