@@ -103,7 +103,7 @@ def format_aplomado_alert(envelope: dict) -> str:
         if counts[level]
     ) or "no findings"
     lines = [
-        f"🛰 Aplomado reviewed {envelope.get('target', 'unknown target')}: {summary}.",
+        f"[scan] Aplomado reviewed {envelope.get('target', 'unknown target')}: {summary}.",
     ]
     if envelope.get("summary"):
         lines.append(str(envelope["summary"]))

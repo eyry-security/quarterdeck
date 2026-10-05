@@ -300,7 +300,7 @@ class Scheduler:
             prompt = entry.prompt.replace("{agent_name}", agent.name)
             try:
                 summary = self.runner(agent, prompt)
-                self.chat.post(entry.channel, agent.name, f"☀️ woke up: {summary}")
+                self.chat.post(entry.channel, agent.name, f"[wake] woke up: {summary}")
                 completion = {
                     **lifecycle,
                     "status": "succeeded",
@@ -314,7 +314,7 @@ class Scheduler:
                 ))
             except Exception as e:  # agent errors go to chat, not to the void
                 self.chat.post(entry.channel, agent.name,
-                               f"⚠️ run failed: {type(e).__name__}: {e}")
+                               f"[error] run failed: {type(e).__name__}: {e}")
                 self.bus.publish(Event(
                     type=RUN_COMPLETED,
                     payload={
