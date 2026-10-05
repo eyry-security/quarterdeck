@@ -136,10 +136,28 @@ def create_app(home: Path | None = None) -> FastAPI:
 
     @app.get("/api/agents")
     def list_agents():
+        # Daemon heartbeat: agents the daemon actually has alive right now.
+        alive: set[str] = set()
+        try:
+            import json as _json, time as _time
+            hb_file = room.registry.home / "daemon.json"
+            if hb_file.exists():
+                hb = _json.loads(hb_file.read_text(encoding="utf-8"))
+                now = _time.time()
+                alive = {n for n, ts in hb.get("agents", {}).items()
+                         if now - float(ts) < 90}
+        except Exception:
+            alive = set()
         agents = []
         for a in room.registry.list():
             d = a.to_dict() if hasattr(a, "to_dict") else dict(a)
-            d["presence"] = "working" if d.get("state") == "working" else "online"
+            name = d.get("name", "")
+            if name in alive:
+                d["presence"] = "working" if d.get("state") == "working" else "online"
+            else:
+                d["presence"] = "offline"
+            if name == "seed":
+                d["seed"] = True
             agents.append(d)
         return {"agents": agents}
 

@@ -116,6 +116,8 @@ def build_parser() -> argparse.ArgumentParser:
     serve = sub.add_parser("serve", help="run the webchat server (KiwiIRC-style agent room)")
     serve.add_argument("--port", type=int, default=8420)
     serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--agents", action="store_true",
+                       help="also boot the agent daemon (seed -> orchestrator -> agents)")
     return parser
 
 
@@ -335,8 +337,24 @@ def cmd_serve(args) -> int:
     """Run the webchat server."""
     from .web import create_app
     import uvicorn
+    if getattr(args, "agents", False):
+        import threading
+        from .daemon import Daemon
+        daemon = Daemon()
+        t = threading.Thread(target=_run_daemon_blocking, args=(daemon,),
+                             name="qd-daemon", daemon=True)
+        t.start()
+        print("[quarterdeck] agent daemon booting in background", flush=True)
     uvicorn.run(create_app(), host=args.host, port=args.port)
     return 0
+
+
+def _run_daemon_blocking(daemon) -> None:
+    import asyncio
+    try:
+        asyncio.run(daemon.run())
+    except Exception as e:
+        print(f"[daemon] fatal: {e}", flush=True)
 
 
 _DISPATCH = {
