@@ -169,6 +169,10 @@ class Room:
         channel = sanitize_channel(channel)
         async with self._lock:
             targets = list(self._subs.get(channel, ()))
+        import logging
+        logging.getLogger("qd.ws").debug(
+            "broadcast %s -> %d subs (msg %s)", channel, len(targets),
+            str(msg.get("id", "?"))[:24])
         dead = []
         for ws in targets:
             try:

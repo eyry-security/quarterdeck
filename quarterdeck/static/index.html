@@ -107,6 +107,9 @@ header .sub { color: var(--muted); font-size: 13px; }
   border-radius: 6px; font-size: 11px; padding: 2px 8px; margin-left: 8px;
   font-family: var(--mono); cursor: pointer; }
 #deregister-btn:hover { color: #ff6b6b; border-color: #ff6b6b; }
+#chan-subs { padding: 6px 16px; border-bottom: 1px solid var(--line); font-size: 11px;
+  color: var(--dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#chan-subs .subs-label { font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; }
 #subs-panel { padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 11px;
   color: var(--dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #subs-panel .subs-label { font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; }
@@ -191,6 +194,7 @@ header .sub { color: var(--muted); font-size: 13px; }
   </div>
   <div id="main">
     <div id="chan-head"><span id="chan-name">#general</span><span id="view-tag" style="display:none">thoughts</span><select id="model-picker" style="display:none" title="Agent model"></select><button id="deregister-btn" style="display:none" title="Deregister this agent">deregister</button><span id="live-badge">LIVE</span></div>
+    <div id="chan-subs" style="display:none"></div>
     <div id="subs-panel" style="display:none"><span class="subs-label">subscribed:</span><span id="subs-list"></span></div>
     <div id="messages"></div>
     <div id="composer">
@@ -215,7 +219,7 @@ const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>
 const fmtTs = ts => new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
 const isAgent = a => a !== "human" && !a.startsWith("guest");
 const nick = () => $("#nick").value.trim() || "human";
-const msgId = m => m.ts + "|" + m.author + "|" + m.text;
+const msgId = m => m.id || (m.ts + "|" + m.author + "|" + m.text);
 // Deterministic DM channel, mirrors server dm_channel(): sorted pair.
 const dmChannelFor = agent => {
   const pair = [nick().trim(), agent.trim()].sort();
@@ -319,6 +323,7 @@ function closeSockets() {
 function switchChannel(c) {
   closeSockets();
   view = {type: "channel", name: c};
+  loadChanSubs(c);
   $("#chan-name").textContent = c;
   $("#view-tag").style.display = "none";
   $("#model-picker").style.display = "none";
@@ -332,6 +337,7 @@ function switchChannel(c) {
 
 async function openThoughts(agent) {
   closeSockets();
+  $("#chan-subs").style.display = "none";
   const seq = viewSeq;
   view = {type: "thoughts", agent};
   $("#chan-name").textContent = agent;
@@ -379,8 +385,9 @@ function channelSocket(channel, kind, seq, onLive) {
     setTimeout(() => { if (seq === viewSeq) onLive(); }, 3000);
   };
   s.onmessage = ev => {
-    if (seq !== viewSeq) return;
+    if (seq !== viewSeq) { console.debug("[ws] stale msg dropped", channel, "seq", seq, "viewSeq", viewSeq); return; }
     const p = JSON.parse(ev.data);
+    console.debug("[ws] recv", channel, p.type || "msg", (p.text||"").slice(0,40));
     if (p.type === "history") { p.messages.forEach(m => addMsg(m, kind)); $("#messages").scrollTop = $("#messages").scrollHeight; }
     else if (p.ts) {
       if (p.cid && pendingCid.has(p.cid)) {
@@ -476,6 +483,34 @@ async function loadModelPicker(agent) {
       loadAgents(); // refresh the model label in the sidebar
     };
   } catch { sel.style.display = "none"; }
+}
+
+async function loadChanSubs(channel) {
+  const panel = $("#chan-subs");
+  panel.style.display = "";
+  panel.innerHTML = '<span class="subs-label">listening:</span>';
+  let agents = [];
+  try { agents = (await api("/api/agents")).agents || []; } catch { return; }
+  for (const a of agents) {
+    const name = a.name;
+    if (name === "seed") continue;  // seed listens everywhere
+    let subs = {};
+    try { subs = (await api(`/api/agents/${encodeURIComponent(name)}/subscriptions`)).channels || {}; } catch {}
+    const on = channel in subs;
+    const pill = document.createElement("span");
+    pill.className = "sub-toggle " + (on ? "on" : "off");
+    pill.textContent = (on ? "● " : "○ ") + name;
+    pill.title = on ? `${name} is listening — click to unsubscribe` : `${name} is not listening — click to subscribe`;
+    pill.onclick = async () => {
+      try {
+        await api(`/api/agents/${encodeURIComponent(name)}/subscriptions`, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({channel, subscribed: !on})});
+        loadChanSubs(channel);
+      } catch (e) { alert("Toggle failed: " + e.message); }
+    };
+    panel.appendChild(pill);
+  }
 }
 
 async function loadSubs(agent) {
