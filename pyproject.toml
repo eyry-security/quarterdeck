@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quarterdeck"
+version = "0.1.0"
+description = "Agent control plane: scheduler, events, and IRC-style chat for persistent Pinnace agents. The command deck of the Eyry suite."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Eyry", email = "hello@eyry.io" }]
+keywords = ["agent", "scheduler", "orchestration", "chatops", "chat", "autonomous", "recon", "bugbounty"]
+dependencies = []
+
+[project.optional-dependencies]
+pinnace = ["pinnace>=0.1.0,<0.2.0"]
+dev = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://eyry.io"
+Repository = "https://github.com/eyry-security/quarterdeck"
+
+[project.scripts]
+quarterdeck = "quarterdeck.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["quarterdeck*"]
