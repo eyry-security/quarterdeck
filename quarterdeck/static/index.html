@@ -175,6 +175,26 @@ header .sub { color: var(--muted); font-size: 13px; }
 }
 .msg.thought .t-toggle:hover { background: rgba(155, 92, 255, 0.15); }
 .msg.thought .t-text { cursor: pointer; }
+/* Tool calls in the thought stream: monospace, amber accent. */
+.msg.thought .t-seg.toolcall {
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 12px;
+  background: rgba(255, 170, 60, 0.07);
+  border-left: 2px solid rgba(255, 170, 60, 0.5);
+  padding: 4px 8px;
+  margin: 4px 0;
+  border-radius: 0 4px 4px 0;
+  word-break: break-word;
+}
+.msg.thought .t-seg.toolresult {
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 12px;
+  opacity: 0.85;
+  padding: 2px 8px 2px 18px;
+  word-break: break-word;
+}
 #composer {
   display: flex; gap: 8px; padding: 10px 16px;
   border-top: 1px solid var(--border); background: var(--surface);
@@ -273,10 +293,14 @@ function toggleThoughtBlock(div) {
 
 // Full HTML for a chain of thoughts: segments joined by subtle dividers.
 function chainFullHtml(msgs) {
-  return msgs.map((m, i) =>
-    (i ? '<div class="t-sep"></div>' : "") +
-    `<div class="t-seg">${esc(String(m.text == null ? "" : m.text))}</div>`
-  ).join("");
+  return msgs.map((m, i) => {
+    const t = String(m.text == null ? "" : m.text);
+    let cls = "t-seg";
+    if (t.startsWith("\U0001F527")) cls += " toolcall";       // 🔧 tool call
+    else if (t.startsWith("\u2192")) cls += " toolresult";    // → tool result
+    return (i ? '<div class="t-sep"></div>' : "") +
+      `<div class="${cls}">${esc(t)}</div>`;
+  }).join("");
 }
 
 // A chain of consecutive thoughts from the same agent, rendered as one
