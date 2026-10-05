@@ -18,12 +18,16 @@ from threading import Lock
 from .agent_registry import home_dir
 
 # Fallback $/1M tokens, used when Pinnace could not price a record.
-# (Anthropic list prices; override is unnecessary — Pinnace prices first.)
+# (Anthropic list prices, Oct 2026; Pinnace prices first when it can.)
 FALLBACK_PRICING = {
     "claude-opus-4-6": {"input": 15.0, "output": 75.0},
     "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
-    "claude-haiku-4-5": {"input": 0.25, "output": 1.25},
+    "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
 }
+
+# Anthropic prompt-cache multipliers (standard tier).
+CACHE_READ_MULT = 0.1    # cache reads billed at 10% of input price
+CACHE_WRITE_MULT = 1.25  # 5-minute cache writes billed at 125% of input price
 
 _lock = Lock()
 
@@ -39,11 +43,48 @@ def _model_key(model_ref: str | None) -> str:
     return ref.split(":", 1)[-1] if ref else ""
 
 
-def _fallback_cost(model_key: str, in_tok: int, out_tok: int) -> float | None:
+def _fallback_cost(model_key: str, in_tok: int, out_tok: int,
+                   cache_read: int = 0, cache_write: int = 0) -> float | None:
+    """Estimate cost with prompt-cache pricing (reads 0.1x, writes 1.25x)."""
+    prices = FALLBACK_PRICING.get(model_key)
+    if not prices:
+        return None
+    uncached = max(in_tok - cache_read - cache_write, 0)
+    return (uncached / 1e6 * prices["input"]
+            + out_tok / 1e6 * prices["output"]
+            + cache_read / 1e6 * prices["input"] * CACHE_READ_MULT
+            + cache_write / 1e6 * prices["input"] * CACHE_WRITE_MULT)
+
+
+def _fallback_no_cache_cost(model_key: str, in_tok: int, out_tok: int) -> float | None:
+    """What the call would have cost with zero prompt caching."""
     prices = FALLBACK_PRICING.get(model_key)
     if not prices:
         return None
     return in_tok / 1e6 * prices["input"] + out_tok / 1e6 * prices["output"]
+
+
+def _cache_tokens(usage: dict) -> tuple[int, int, int]:
+    """Extract (cache_read, cache_write, uncached_input) from a usage dict.
+
+    Accepts Pinnace-normalized keys and falls back to native Anthropic
+    field names (cache_read_input_tokens / cache_creation_input_tokens).
+    """
+    u = usage or {}
+    read = int(u.get("cache_read_tokens")
+               or u.get("cache_read_input_tokens") or 0)
+    write = (int(u.get("cache_write_5m_tokens") or 0)
+             + int(u.get("cache_write_1h_tokens") or 0)
+             + int(u.get("cache_write_unclassified_tokens") or 0))
+    if not write:
+        # Native Anthropic fields: prefer the TTL split when present.
+        write = (int(u.get("cache_creation_5m_input_tokens") or 0)
+                 + int(u.get("cache_creation_1h_input_tokens") or 0))
+        if not write:
+            write = int(u.get("cache_creation_input_tokens") or 0)
+    uncached = u.get("uncached_input_tokens")
+    uncached = int(uncached) if uncached is not None else None
+    return read, write, uncached
 
 
 def record_pinnace_usage(agent: str, records: list[dict],
@@ -62,10 +103,11 @@ def record_pinnace_usage(agent: str, records: list[dict],
             amount = cost.get("amount")
             cost_usd = float(amount) if amount is not None else None
             estimated = False
+            cache_read, cache_write, uncached_in = _cache_tokens(usage)
             if cost_usd is None:
                 cost_usd = _fallback_cost(
                     _model_key(r.get("model_ref") or r.get("model")),
-                    in_tok, out_tok)
+                    in_tok, out_tok, cache_read, cache_write)
                 estimated = cost_usd is not None
             lines.append(json.dumps({
                 "ts": time.time(),
@@ -74,6 +116,9 @@ def record_pinnace_usage(agent: str, records: list[dict],
                 "model_ref": r.get("model_ref") or "",
                 "input_tokens": in_tok,
                 "output_tokens": out_tok,
+                "cache_read_tokens": cache_read,
+                "cache_write_tokens": cache_write,
+                "uncached_input_tokens": uncached_in,
                 "cost_usd": cost_usd,
                 "cost_estimated": estimated,
             }))
@@ -103,9 +148,18 @@ def _iter_records(home: Path | None = None):
 
 
 def summary(home: Path | None = None, since_ts: float = 0.0) -> dict:
-    """Totals + per-agent breakdown. since_ts filters to recent records."""
+    """Totals + per-agent breakdown + prompt-cache stats.
+
+    cache_hit_rate: fraction of input tokens served from cache (None when
+    there are no input tokens to judge). cache_savings_usd: estimated spend
+    avoided vs. zero caching, priced with fallback rates.
+    """
     total_in = total_out = 0
+    total_read = total_write = 0
+    total_uncached = 0
     total_cost = 0.0
+    total_savings = 0.0
+    savings_priced = True
     cost_priced = True
     by_agent: dict[str, dict] = {}
     for r in _iter_records(home):
@@ -113,14 +167,26 @@ def summary(home: Path | None = None, since_ts: float = 0.0) -> dict:
             continue
         in_tok = int(r.get("input_tokens") or 0)
         out_tok = int(r.get("output_tokens") or 0)
+        read = int(r.get("cache_read_tokens") or 0)
+        write = int(r.get("cache_write_tokens") or 0)
+        uncached = r.get("uncached_input_tokens")
+        uncached = int(uncached) if uncached is not None else max(
+            in_tok - read - write, 0)
         cost = r.get("cost_usd")
         total_in += in_tok
         total_out += out_tok
+        total_read += read
+        total_write += write
+        total_uncached += uncached
         agent = r.get("agent", "?")
         a = by_agent.setdefault(agent, {"input_tokens": 0, "output_tokens": 0,
+                                        "cache_read_tokens": 0,
+                                        "cache_write_tokens": 0,
                                         "cost_usd": 0.0, "calls": 0})
         a["input_tokens"] += in_tok
         a["output_tokens"] += out_tok
+        a["cache_read_tokens"] += read
+        a["cache_write_tokens"] += write
         a["calls"] += 1
         if cost is None:
             cost_priced = False
@@ -129,12 +195,25 @@ def summary(home: Path | None = None, since_ts: float = 0.0) -> dict:
             a["cost_usd"] += cost
             if r.get("cost_estimated"):
                 cost_priced = False
+        no_cache = _fallback_no_cache_cost(
+            _model_key(r.get("model_ref") or r.get("model")), in_tok, out_tok)
+        if no_cache is None or cost is None:
+            savings_priced = False
+        else:
+            total_savings += max(no_cache - cost, 0.0)
+    cacheable = total_read + total_uncached
+    hit_rate = (total_read / cacheable) if cacheable > 0 else None
     return {
         "input_tokens": total_in,
         "output_tokens": total_out,
         "total_tokens": total_in + total_out,
         "cost_usd": round(total_cost, 4),
         "cost_estimated": not cost_priced,
+        "cache_read_tokens": total_read,
+        "cache_write_tokens": total_write,
+        "cache_hit_rate": round(hit_rate, 4) if hit_rate is not None else None,
+        "cache_savings_usd": round(total_savings, 4),
+        "cache_savings_estimated": not savings_priced,
         "by_agent": by_agent,
     }
 

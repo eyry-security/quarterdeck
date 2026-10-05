@@ -735,6 +735,7 @@ async function loadUsage() {
     const u = await api("/api/usage");
     const s = u.summary, eta = u.eta;
     let txt = `\u{1F525} ${fmtTok(s.total_tokens)} tok / ${fmtUsd(s.cost_usd)}`;
+    if (s.cache_hit_rate != null) txt += ` · ${Math.round(s.cache_hit_rate * 100)}% cached`;
     let cls = "";
     if (eta.eta_hours != null) {
       txt += ` · ~${fmtEta(eta.eta_hours)} left`;
@@ -760,7 +761,11 @@ function toggleUsagePanel() {
     <div class="urow"><span>total tokens</span><span>${fmtTok(s.total_tokens || 0)}</span></div>
     <div class="urow"><span>in / out</span><span>${fmtTok(s.input_tokens || 0)} / ${fmtTok(s.output_tokens || 0)}</span></div>
     <div class="urow"><span>cost</span><span>${fmtUsd(s.cost_usd || 0)}${s.cost_estimated ? " (est)" : ""}</span></div>
-    <div class="urow"><span>burn 1h / 24h</span><span>${fmtUsd(burn1 || 0)}/h · ${fmtUsd(burn24 || 0)}/h</span></div>`;
+    <div class="urow"><span>burn 1h / 24h</span><span>${fmtUsd(burn1 || 0)}/h · ${fmtUsd(burn24 || 0)}/h</span></div>
+    <h4 style="margin-top:10px">Prompt cache</h4>
+    <div class="urow"><span>hit rate</span><span>${s.cache_hit_rate != null ? Math.round(s.cache_hit_rate * 100) + "%" : "—"}</span></div>
+    <div class="urow"><span>read / write</span><span>${fmtTok(s.cache_read_tokens || 0)} / ${fmtTok(s.cache_write_tokens || 0)}</span></div>
+    <div class="urow"><span>est. saved</span><span>${fmtUsd(s.cache_savings_usd || 0)}${s.cache_savings_estimated ? " (est)" : ""}</span></div>`;
   const agents = Object.entries(byAgent).sort((a,b) => b[1].cost_usd - a[1].cost_usd);
   if (agents.length) {
     html += `<h4 style="margin-top:10px">By agent</h4>`;

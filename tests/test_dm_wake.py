@@ -299,8 +299,8 @@ class TestUsage:
         rec = self._rec(cost={"amount": None, "status": "usage_unavailable"})
         usage_mod.record_pinnace_usage("scout", [rec], home=home)
         s = usage_mod.summary(home=home)
-        # haiku fallback: 1000/1e6*0.25 + 500/1e6*1.25 (summary rounds to 4dp)
-        assert s["cost_usd"] == round(0.000875, 4)
+        # haiku fallback: 1000/1e6*1.0 + 500/1e6*5.0 (summary rounds to 4dp)
+        assert s["cost_usd"] == round(0.0035, 4)
         assert s["cost_estimated"] is True
 
     def test_credit_balance_roundtrip(self, home):
