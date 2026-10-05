@@ -2,8 +2,8 @@
 
 The seed runs and maintains the deck — not just boot, ongoing stewardship:
 - Ensures the room is alive (#general exists)
-- Owns the orchestrator lifecycle (the daemon boots it first, seed watches it)
-- Handles quarterdeck_register_agent (new agent files + wake via orchestrator)
+- Handles quarterdeck_register_agent (new agent files + spawn-time wakeup prompt)
+- Handles quarterdeck_wake (re-wake any agent with a fresh prompt)
 - Greets new users who speak in the room
 - Deck health: agents alive? channels healthy? JSONL disk usage?
 - Compacts old channel history when logs get large (archives, keeps room snappy)
@@ -91,7 +91,7 @@ class SeedRunner(AgentRunner):
     # tools: quarterdeck_register_agent
     # ------------------------------------------------------------------
     def all_tools(self) -> list:
-        return super().all_tools() + [self._register_tool()]
+        return super().all_tools() + [self._register_tool(), self._wake_tool()]
 
     def _register_tool(self):
         from langchain_core.tools import StructuredTool
@@ -117,10 +117,21 @@ class SeedRunner(AgentRunner):
                                  f"# {target}\n\nBorn {time.strftime('%Y-%m-%d %H:%M')} — registered by seed.\n")
             except Exception as e:
                 return f"error: files: {e}"
-            # Wake via orchestrator (falls back to a basic prompt).
+            # Spawn-time wakeup prompt (mechanical template, no LLM).
             try:
-                if self.daemon is not None and self.daemon.orchestrator is not None:
-                    self.daemon.orchestrator.generate_wakeup(target)
+                from .wakeup import build_wakeup_prompt, write_wakeup
+                try:
+                    channels = self.chat.channels()
+                except Exception:
+                    channels = []
+                prompt = build_wakeup_prompt(target, identify or "",
+                                             runbook or "", channels)
+                write_wakeup(self.home, target, prompt)
+                try:
+                    post_thought(target, f"wakeup prompt:\n{prompt[:1500]}",
+                                 home=self.home)
+                except Exception:
+                    pass
                 # Ask the daemon to start its loop.
                 if self.daemon is not None:
                     self.daemon.ensure_runner_soon(target)
@@ -133,8 +144,43 @@ class SeedRunner(AgentRunner):
             name="quarterdeck_register_agent",
             description=(
                 "Register a brand-new agent: creates its registry entry, "
-                "identify.md / runbook.md / memory.md, and wakes it via the orchestrator. "
+                "identify.md / runbook.md / memory.md, and writes a spawn-time "
+                "wakeup prompt the agent reads on first boot. "
                 "Args: name, identify (identify.md text), runbook (runbook.md text)."
+            ),
+        )
+
+    def _wake_tool(self):
+        from langchain_core.tools import StructuredTool
+
+        def qd_wake(agent: str) -> str:
+            """Re-wake an agent with a fresh spawn-style prompt.
+            Args: agent (name)."""
+            target = (agent or "").strip()
+            if not target:
+                return "error: agent name required"
+            try:
+                from .wakeup import build_wakeup_prompt, write_wakeup
+                ident = self.files.read(target, "identify.md")
+                runbook = self.files.read(target, "runbook.md")
+                try:
+                    channels = self.chat.channels()
+                except Exception:
+                    channels = []
+                prompt = build_wakeup_prompt(target, ident, runbook, channels)
+                write_wakeup(self.home, target, prompt)
+                if self.daemon is not None:
+                    self.daemon.wake_agent(target, "re-wake")
+                return f"wakeup prompt delivered to {target!r}"
+            except Exception as e:
+                return f"error: {type(e).__name__}: {e}"
+
+        return StructuredTool.from_function(
+            func=qd_wake,
+            name="quarterdeck_wake",
+            description=(
+                "Re-wake an agent with a fresh wakeup prompt built from their "
+                "current files and room state. Args: agent (name)."
             ),
         )
 
@@ -182,7 +228,7 @@ class SeedRunner(AgentRunner):
         except Exception:
             registered = []
         for name in registered:
-            if name in ("seed", "orchestrator"):
+            if name == "seed":
                 continue
             ts = alive.get(name, 0)
             if now - ts > 120:
@@ -239,7 +285,7 @@ class SeedRunner(AgentRunner):
         greeted: list[str] = []
         for m in msgs:
             author = str(m.get("author", "")).strip()
-            if not author or author.lower() in ("seed", "orchestrator"):
+            if not author or author.lower() == "seed":
                 continue
             # Skip registered agents.
             try:

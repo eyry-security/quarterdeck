@@ -170,6 +170,30 @@ class AgentRegistry:
             self._save()
             return agent
 
+    def set_model(self, name: str, model: str | None) -> Agent:
+        with self._thread_lock, file_lock(self._lock_file):
+            self._refresh()
+            try:
+                agent = self._agents[name]
+            except KeyError:
+                raise RegistryError(f"no agent named {name!r}") from None
+            agent.model = model.strip() if model and model.strip() else None
+            agent.updated_at = time.time()
+            self._save()
+            return agent
+
+    def set_system_prompt(self, name: str, prompt: str) -> Agent:
+        with self._thread_lock, file_lock(self._lock_file):
+            self._refresh()
+            try:
+                agent = self._agents[name]
+            except KeyError:
+                raise RegistryError(f"no agent named {name!r}") from None
+            agent.system_prompt = prompt
+            agent.updated_at = time.time()
+            self._save()
+            return agent
+
     def exists(self, name: str) -> bool:
         with self._thread_lock, file_lock(self._lock_file):
             self._refresh()

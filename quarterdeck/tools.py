@@ -9,6 +9,7 @@ construction time via ``agent_name``.
 """
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Callable
 
@@ -28,13 +29,15 @@ def _make_tool(name: str, description: str, func: Callable) -> StructuredTool:
     )
 
 
-def quarterdeck_tools(agent_name: str, home: Path | None = None) -> list:
+def quarterdeck_tools(agent_name: str, home: Path | None = None,
+                      daemon=None) -> list:
     """Build the full Quarterdeck toolset bound to an agent identity.
 
     Args:
         agent_name: the agent's name (used as message author, thought
             stream owner, subscription owner).
         home: Quarterdeck home dir (default ~/.quarterdeck).
+        daemon: the agent Daemon (enables seed-only management tools).
     """
     chat = Chat(home=home)
     registry = AgentRegistry(home=home)
@@ -162,7 +165,47 @@ def quarterdeck_tools(agent_name: str, home: Path | None = None) -> list:
         except Exception as e:
             return f"error: {e}"
 
-    return [
+    # --- quarterdeck_set_model ---
+    def qd_set_model(model: str) -> str:
+        """Change your own model. Args: model (e.g. 'anthropic:claude-haiku-4-5', or empty to reset to default)."""
+        try:
+            registry.set_model(me, model)
+            return f"your model is now {model.strip() or '(default)'}; takes effect on your next turn"
+        except Exception as e:
+            return f"error: {e}"
+
+    # --- quarterdeck_set_agent_model (seed only) ---
+    def qd_set_agent_model(agent: str, model: str) -> str:
+        """Change another agent's model. Args: agent (name), model."""
+        try:
+            registry.set_model(agent.strip(), model)
+            return f"{agent.strip()}'s model is now {model.strip() or '(default)'}"
+        except Exception as e:
+            return f"error: {e}"
+
+    # --- quarterdeck_deregister_agent (seed only) ---
+    def qd_deregister_agent(name: str) -> str:
+        """Deregister an agent: stops its loop, retires it, archives files."""
+        target = (name or "").strip()
+        if not target:
+            return "error: agent name required"
+        d = daemon
+        if d is None or getattr(d, "_loop", None) is None:
+            return "error: daemon not available"
+        fut = asyncio.run_coroutine_threadsafe(d.deregister(target), d._loop)
+        try:
+            result = fut.result(timeout=20)
+        except Exception as e:
+            return f"error: {e}"
+        status = result.get("status", "unknown")
+        if status == "error":
+            return f"error: {result.get('error', 'deregister failed')}"
+        msg = f"{target}: {status}"
+        if result.get("archived"):
+            msg += f" (files archived to {result['archived']})"
+        return msg
+
+    tools = [
         _make_tool(
             "quarterdeck_send",
             "Send a message to a Quarterdeck channel. Args: channel (e.g. '#general'), text.",
@@ -213,4 +256,26 @@ def quarterdeck_tools(agent_name: str, home: Path | None = None) -> list:
             "Set your presence status. Args: status (online, working, away, offline).",
             qd_status,
         ),
+        _make_tool(
+            "quarterdeck_set_model",
+            "Change your own model (e.g. switch to haiku for cheap work, opus for hard tasks). Args: model (e.g. 'anthropic:claude-haiku-4-5', or empty to reset to default). Takes effect on your next turn.",
+            qd_set_model,
+        ),
     ]
+    # Seed-only: manage other agents' models.
+    if me.strip().lower() == "seed":
+        tools.append(
+            _make_tool(
+                "quarterdeck_set_agent_model",
+                "Change another agent's model. Args: agent (name), model (e.g. 'anthropic:claude-haiku-4-5', or empty for default).",
+                qd_set_agent_model,
+            )
+        )
+        tools.append(
+            _make_tool(
+                "quarterdeck_deregister_agent",
+                "Deregister an agent: stops its loop, retires it from the registry, archives its files to ~/.quarterdeck/archive/agents/. Args: name. Cannot deregister seed.",
+                qd_deregister_agent,
+            )
+        )
+    return tools

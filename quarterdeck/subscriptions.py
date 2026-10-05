@@ -6,6 +6,8 @@ import re
 import time
 from pathlib import Path
 
+from .chat import message_id
+
 
 def _agent_dir(home: Path | None, agent: str) -> Path:
     base = Path(home) if home else Path.home() / ".quarterdeck"
@@ -31,6 +33,46 @@ def _load(home: Path | None, agent: str) -> dict:
 
 def _save(home: Path | None, agent: str, data: dict) -> None:
     _subs_file(home, agent).write_text(json.dumps(data, indent=2))
+
+
+def _cursor_for(data: dict, channel: str, chat, old_ts_key: str) -> str | None:
+    """ID cursor for a channel, migrating legacy timestamp watermarks.
+
+    On first run after upgrade, an old timestamp watermark is converted to
+    the ID of the latest message at or before that timestamp — precise,
+    no re-reads, no misses.
+    """
+    cursors = data.setdefault("read_cursors", {})
+    if channel in cursors:
+        return cursors[channel]
+    old_ts = data.get(old_ts_key, 0.0) or 0.0
+    if old_ts:
+        latest_id = None
+        try:
+            for m in chat.history(channel, n=500):
+                if float(m.get("ts", 0) or 0) <= float(old_ts):
+                    mid = message_id(m)
+                    if latest_id is None or mid > latest_id:
+                        latest_id = mid
+        except Exception:
+            pass
+        if latest_id:
+            cursors[channel] = latest_id
+            return latest_id
+    return None
+
+
+def _advance_cursor(data: dict, channel: str, messages: list[dict]) -> None:
+    latest = data["read_cursors"].get(channel)
+    for m in messages:
+        try:
+            mid = message_id(m)
+        except Exception:
+            continue
+        if latest is None or mid > latest:
+            latest = mid
+    if latest:
+        data["read_cursors"][channel] = latest
 
 
 def subscribe(agent: str, channels: list[str], filters: list[str] | None = None,
@@ -73,23 +115,21 @@ def get_subscriptions(agent: str, home: Path | None = None) -> dict:
 def check_mentions(agent: str, chat, home: Path | None = None) -> dict:
     """Check subscribed channels for new @mentions and keyword hits.
 
-    Returns unread mentions since last check, then updates the watermark.
+    Returns unread mentions since the per-channel ID cursor, then advances
+    the cursor past everything seen (even non-matching messages are "read").
     """
     data = _load(home, agent)
-    since = data.get("last_check", 0.0)
-    now = time.time()
     agent_lc = agent.strip().lower()
     mention_pat = re.compile(rf"@{re.escape(agent_lc)}\b", re.IGNORECASE)
 
     hits = []
     for channel, sub in data["channels"].items():
+        cursor = _cursor_for(data, channel, chat, "last_check")
         try:
-            msgs = chat.history(channel, n=200)
+            msgs = chat.after(channel, cursor, n=200)
         except Exception:
             continue
         for m in msgs:
-            if m.get("ts", 0) <= since:
-                continue
             # Don't notify about own messages
             if str(m.get("author", "")).strip().lower() == agent_lc:
                 continue
@@ -106,9 +146,46 @@ def check_mentions(agent: str, chat, home: Path | None = None) -> dict:
                     "author": m.get("author"),
                     "text": text[:500],
                     "ts": m.get("ts"),
+                    "id": message_id(m),
                 })
+        _advance_cursor(data, channel, msgs)
 
-    data["last_check"] = now
     _save(home, agent, data)
-    hits.sort(key=lambda h: h["ts"])
+    hits.sort(key=lambda h: (h["ts"], h["id"]))
     return {"agent": agent, "unread": hits, "count": len(hits)}
+
+
+def check_activity(agent: str, chat, home: Path | None = None) -> dict:
+    """Return ALL new messages in subscribed channels (not just mentions).
+
+    Separate watermark (last_activity_check) from check_mentions so the two
+    can run independently. Own messages are excluded.
+    """
+    data = _load(home, agent)
+    agent_lc = agent.strip().lower()
+
+    msgs_out = []
+    for channel in data["channels"].keys():
+        cursor = _cursor_for(data, channel, chat, "last_activity_check")
+        try:
+            msgs = chat.after(channel, cursor, n=200)
+        except Exception:
+            continue
+        for m in msgs:
+            if str(m.get("author", "")).strip().lower() == agent_lc:
+                continue
+            text = str(m.get("text", ""))
+            if not text.strip():
+                continue
+            msgs_out.append({
+                "channel": channel,
+                "author": m.get("author"),
+                "text": text[:500],
+                "ts": m.get("ts"),
+                "id": message_id(m),
+            })
+        _advance_cursor(data, channel, msgs)
+
+    _save(home, agent, data)
+    msgs_out.sort(key=lambda h: (h["ts"], h["id"]))
+    return {"agent": agent, "messages": msgs_out, "count": len(msgs_out)}
