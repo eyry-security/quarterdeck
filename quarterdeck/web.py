@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from .agent_files import AGENT_FILES, AgentFiles
 from .agent_registry import AgentRegistry
 from .chat import Chat, sanitize_channel
+from .thoughts import mount_thought_routes
 from .events import EventBus
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -212,6 +213,8 @@ def create_app(home: Path | None = None) -> FastAPI:
             return JSONResponse({"ok": True, "hint": "static UI not built yet"})
         return FileResponse(str(idx))
 
+    # Thought streams (agent monologues)
+    mount_thought_routes(app, room)
     # expose room for tests / embedding
     app.state.room = room
     return app

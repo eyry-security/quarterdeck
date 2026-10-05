@@ -137,6 +137,12 @@ header .sub { color: var(--muted); font-size: 13px; }
   color: var(--text); font-family: var(--mono); font-size: 12px; resize: vertical;
 }
 #agent-panel .row { display: flex; gap: 8px; margin-top: 8px; }
+#thought-stream { display: none; height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; background: rgba(0,0,0,0.2); }
+#thought-stream .thought { font-style: italic; opacity: 0.75; margin-bottom: 6px; font-size: 13px; line-height: 1.4; }
+#thought-stream .thought .ts { opacity: 0.5; font-size: 11px; margin-right: 6px; font-style: normal; }
+#agent-panel.thoughts-mode #panel-text, #agent-panel.thoughts-mode #panel-save { display: none; }
+#agent-panel.thoughts-mode #thought-stream { display: block; }
+#agent-panel.thoughts-mode #thought-input-row { display: flex; }
 #agent-panel .row button {
   flex: 1; padding: 6px; border-radius: 6px; border: none; cursor: pointer;
   background: linear-gradient(90deg, var(--accent1), var(--accent2));
@@ -173,8 +179,14 @@ header .sub { color: var(--muted); font-size: 13px; }
       <button data-f="memory.md" class="active">memory.md</button>
       <button data-f="runbook.md">runbook.md</button>
       <button data-f="identify.md">identify.md</button>
+      <button data-f="__thoughts__" id="thoughts-tab">💭 thoughts</button>
     </div>
     <textarea id="panel-text" placeholder="No file yet — write the agent's memory here."></textarea>
+    <div id="thought-stream"></div>
+    <div id="thought-input-row" style="display:none; gap:8px; margin-bottom:8px;">
+      <input id="thought-input" placeholder="Message this agent directly…" style="flex:1;">
+      <button id="thought-send">Send</button>
+    </div>
     <div class="row"><button id="panel-save">Save</button><button id="panel-dm">DM</button></div>
   </div>
 </div>
@@ -245,6 +257,7 @@ function switchChannel(c) {
   connect();
 }
 
+const sentIds = new Set();
 function connect() {
   if (ws) ws.close();
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -254,7 +267,11 @@ function connect() {
   ws.onmessage = ev => {
     const p = JSON.parse(ev.data);
     if (p.type === "history") { p.messages.forEach(addMsg); $("#messages").scrollTop = $("#messages").scrollHeight; }
-    else if (p.ts) addMsg(p);
+    else if (p.ts) {
+      const id = p.ts + "|" + p.author + "|" + p.text;
+      if (!sentIds.has(id)) addMsg(p);
+      sentIds.delete(id);
+    }
   };
 }
 
@@ -262,17 +279,71 @@ async function send() {
   const text = $("#input").value.trim(), author = $("#nick").value.trim() || "human";
   if (!text) return;
   $("#input").value = "";
+  // Optimistic render: show immediately, dedupe when broadcast arrives.
+  const optimistic = {ts: Date.now()/1000, author, text};
+  addMsg(optimistic);
+  sentIds.add(optimistic.ts + "|" + author + "|" + text);
   if (ws && ws.readyState === 1) {
     ws.send(JSON.stringify({type: "post", author, text}));
   } else {
-    const m = await api(`/api/channels/${encodeURIComponent(current)}/messages`,
+    await api(`/api/channels/${encodeURIComponent(current)}/messages`,
       {method: "POST", headers: {"Content-Type": "application/json"},
        body: JSON.stringify({author, text})});
-    addMsg(m);
   }
 }
 
+let thoughtWs = null;
+async function openThoughts(name) {
+  panelAgent = name;
+  document.querySelectorAll(".file-tabs button").forEach(b => b.classList.toggle("active", b.dataset.f === "__thoughts__"));
+  document.getElementById("agent-panel").classList.add("thoughts-mode");
+  const stream = document.getElementById("thought-stream");
+  stream.innerHTML = '<div class="thought"><span class="ts">…</span>connecting to thought stream…</div>';
+  if (thoughtWs) thoughtWs.close();
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  thoughtWs = new WebSocket(`${proto}://${location.host}/ws/thoughts/${encodeURIComponent(name)}`);
+  thoughtWs.onmessage = ev => {
+    const p = JSON.parse(ev.data);
+    if (p.type === "history") {
+      stream.innerHTML = "";
+      p.messages.forEach(t => addThought(t));
+      stream.scrollTop = stream.scrollHeight;
+    } else if (p.ts) addThought(p);
+  };
+  thoughtWs.onclose = () => {
+    stream.innerHTML += '<div class="thought"><span class="ts">!</span>stream closed</div>';
+  };
+}
+function addThought(t) {
+  const stream = document.getElementById("thought-stream");
+  const div = document.createElement("div");
+  div.className = "thought";
+  div.innerHTML = `<span class="ts">${fmtTs(t.ts)}</span>${esc(t.text)}`;
+  stream.appendChild(div);
+  stream.scrollTop = stream.scrollHeight;
+}
+async function sendThoughtDM() {
+  const input = document.getElementById("thought-input");
+  const text = input.value.trim();
+  if (!text || !panelAgent) return;
+  input.value = "";
+  const me = document.getElementById("nick").value.trim() || "human";
+  // Post as DM to the agent; it appears in the DM channel.
+  await api("/api/dm", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({sender: me, recipient: panelAgent, text})});
+  // Also show it in the thought stream as your message.
+  addThought({ts: Date.now()/1000, author: me, text: "(to " + panelAgent + ") " + text});
+}
+document.getElementById("thought-send").onclick = sendThoughtDM;
+document.getElementById("thought-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") sendThoughtDM();
+});
+function closeThoughts() {
+  if (thoughtWs) { thoughtWs.close(); thoughtWs = null; }
+  document.getElementById("agent-panel").classList.remove("thoughts-mode");
+}
 async function openPanel(name) {
+  closeThoughts();
   panelAgent = name; panelFile = "memory.md";
   $("#panel-title").textContent = name;
   document.querySelectorAll(".file-tabs button").forEach(b => b.classList.toggle("active", b.dataset.f === "memory.md"));
@@ -285,8 +356,11 @@ async function loadPanelFile() {
     $("#panel-text").value = r.content;
   } catch { $("#panel-text").value = ""; }
 }
-$("#panel-close").onclick = () => $("#agent-panel").classList.remove("open");
+$("#panel-close").onclick = () => { closeThoughts(); $("#agent-panel").classList.remove("open"); };
 document.querySelectorAll(".file-tabs button").forEach(b => b.onclick = async () => {
+  if (b.dataset.f === "__thoughts__") { openThoughts(panelAgent); return; }
+  closeThoughts();
+  document.getElementById("agent-panel").classList.remove("thoughts-mode");
   panelFile = b.dataset.f;
   document.querySelectorAll(".file-tabs button").forEach(x => x.classList.toggle("active", x === b));
   await loadPanelFile();

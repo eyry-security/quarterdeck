@@ -18,6 +18,15 @@ from .events import (
 )
 from .integrations import format_aplomado_alert, parse_aplomado_event
 from .rules import Rule, RuleEngine, RuleStore
+from . import subscriptions
+from .thoughts import thought_channel
+
+def __getattr__(name: str):
+    # Lazy: langchain_core is heavy; only import on explicit use.
+    if name == "quarterdeck_tools":
+        from .tools import quarterdeck_tools
+        return quarterdeck_tools
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 from .scheduler import Scheduler
 
 __version__ = "0.1.0"
@@ -43,4 +52,7 @@ __all__ = [
     "WEBHOOK",
     "format_aplomado_alert",
     "parse_aplomado_event",
+    "quarterdeck_tools",
+    "subscriptions",
+    "thought_channel",
 ]
