@@ -117,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=8420)
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--agents", action="store_true",
-                       help="also boot the agent daemon (seed -> orchestrator -> agents)")
+                       help="also boot the agent daemon (seed -> agents)")
     return parser
 
 
@@ -337,6 +337,7 @@ def cmd_serve(args) -> int:
     """Run the webchat server."""
     from .web import create_app
     import uvicorn
+    daemon = None
     if getattr(args, "agents", False):
         import threading
         from .daemon import Daemon
@@ -345,7 +346,7 @@ def cmd_serve(args) -> int:
                              name="qd-daemon", daemon=True)
         t.start()
         print("[quarterdeck] agent daemon booting in background", flush=True)
-    uvicorn.run(create_app(), host=args.host, port=args.port)
+    uvicorn.run(create_app(daemon=daemon), host=args.host, port=args.port)
     return 0
 
 

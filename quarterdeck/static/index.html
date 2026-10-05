@@ -39,6 +39,26 @@ header .logo {
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 header .sub { color: var(--muted); font-size: 13px; }
+#usage-widget { margin-left: auto; font-family: var(--mono); font-size: 12px;
+  color: var(--dim); border: 1px solid var(--line); border-radius: 8px;
+  padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+#usage-widget:hover { border-color: var(--accent1); color: var(--text); }
+#usage-widget .warn { color: #ffb86b; }
+#usage-widget .crit { color: #ff6b6b; }
+#usage-panel { position: absolute; top: 52px; right: 12px; z-index: 50;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; min-width: 280px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+#usage-panel h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--dim); }
+#usage-panel .urow { display: flex; justify-content: space-between; padding: 2px 0;
+  font-family: var(--mono); }
+#usage-panel .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 8px 0; overflow: hidden; }
+#usage-panel .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent1), var(--accent2)); }
+#usage-panel input { width: 90px; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font-family: var(--mono); font-size: 12px; }
+#usage-panel button { background: transparent; color: var(--dim); border: 1px solid var(--line);
+  border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+#usage-panel button:hover { border-color: var(--accent1); color: var(--text); }
 #app { display: flex; flex: 1; min-height: 0; }
 #sidebar {
   width: 250px; min-width: 250px;
@@ -62,6 +82,9 @@ header .sub { color: var(--muted); font-size: 13px; }
 .chan .hash { color: var(--muted); font-family: var(--mono); }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.dot.thinking { background: transparent; border: 2px solid var(--accent1); border-top-color: transparent;
+  animation: spin 0.8s linear infinite; box-shadow: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .dot.working { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
 .agent .dot.offline { background: var(--red); box-shadow: none; }
 .agent .role { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono); }
@@ -77,6 +100,29 @@ header .sub { color: var(--muted); font-size: 13px; }
   font-family: var(--mono); font-size: 15px; font-weight: 600;
   display: flex; align-items: center; gap: 10px;
 }
+#model-picker {
+  background: var(--panel); color: var(--dim); border: 1px solid var(--line);
+  border-radius: 6px; font-size: 11px; padding: 2px 6px; margin-left: 8px;
+  font-family: var(--mono); cursor: pointer;
+}
+#model-picker:focus { outline: none; border-color: var(--accent1); }
+#deregister-btn { background: transparent; color: var(--dim); border: 1px solid var(--line);
+  border-radius: 6px; font-size: 11px; padding: 2px 8px; margin-left: 8px;
+  font-family: var(--mono); cursor: pointer; }
+#deregister-btn:hover { color: #ff6b6b; border-color: #ff6b6b; }
+#chan-subs { padding: 6px 16px; border-bottom: 1px solid var(--line); font-size: 11px;
+  color: var(--dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#chan-subs .subs-label { font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; }
+.msg.mention { background: rgba(88, 101, 242, 0.12); border-left: 3px solid var(--accent1); padding-left: 9px; }
+.unread-badge { background: var(--accent1); color: #fff; border-radius: 10px; font-size: 10px;
+  padding: 1px 7px; margin-left: 6px; font-family: var(--mono); font-weight: 700; }
+#subs-panel { padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 11px;
+  color: var(--dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#subs-panel .subs-label { font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; }
+.sub-toggle { display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 12px; padding: 2px 8px; font-family: var(--mono); }
+.sub-toggle.on { border-color: var(--accent1); color: var(--text); }
+.sub-toggle.off { opacity: .55; }
 #view-tag {
   font-size: 11px; font-family: var(--mono); font-weight: 400;
   color: var(--muted); border: 1px solid var(--border);
@@ -141,6 +187,10 @@ header .sub { color: var(--muted); font-size: 13px; }
 <header>
   <div class="logo">QUARTERDECK</div>
   <div class="sub">Eyry agent room — persistent agents, live channels</div>
+  <div id="usage-widget" title="Token usage — click for breakdown">
+    <span id="usage-summary">…</span>
+  </div>
+  <div id="usage-panel" style="display:none"></div>
 </header>
 <div id="app">
   <div id="sidebar">
@@ -149,7 +199,9 @@ header .sub { color: var(--muted); font-size: 13px; }
     <div class="side-section"><h3>Agents</h3><div id="agents"></div></div>
   </div>
   <div id="main">
-    <div id="chan-head"><span id="chan-name">#general</span><span id="view-tag" style="display:none">thoughts</span><span id="live-badge">LIVE</span></div>
+    <div id="chan-head"><span id="chan-name">#general</span><span id="view-tag" style="display:none">thoughts</span><select id="model-picker" style="display:none" title="Agent model"></select><button id="deregister-btn" style="display:none" title="Deregister this agent">deregister</button><span id="live-badge">LIVE</span></div>
+    <div id="chan-subs" style="display:none"></div>
+    <div id="subs-panel" style="display:none"><span class="subs-label">subscribed:</span><span id="subs-list"></span></div>
     <div id="messages"></div>
     <div id="composer">
       <input id="nick" placeholder="nick" value="human">
@@ -164,13 +216,22 @@ const $ = s => document.querySelector(s);
 let view = {type: "channel", name: "#general"};
 let viewSeq = 0;
 let ws = null, dmWs = null;
-const sentIds = new Set();
 const renderedIds = new Set();
+// Unread tracking: channel -> timestamp of last view. Persisted.
+const unreadKey = "qd-unread";
+let lastRead = {};
+try { lastRead = JSON.parse(localStorage.getItem(unreadKey) || "{}"); } catch {}
+const saveLastRead = () => { try { localStorage.setItem(unreadKey, JSON.stringify(lastRead)); } catch {} };
+let unreadCounts = {};  // channel -> count
+// cid -> {id, el}: optimistic messages awaiting their authoritative echo.
+const pendingCid = new Map();
+const newCid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+  : "c" + Date.now().toString(36) + Math.random().toString(36).slice(2);
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const fmtTs = ts => new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
 const isAgent = a => a !== "human" && !a.startsWith("guest");
 const nick = () => $("#nick").value.trim() || "human";
-const msgId = m => m.ts + "|" + m.author + "|" + m.text;
+const msgId = m => m.id || (m.ts + "|" + m.author + "|" + m.text);
 // Deterministic DM channel, mirrors server dm_channel(): sorted pair.
 const dmChannelFor = agent => {
   const pair = [nick().trim(), agent.trim()].sort();
@@ -184,6 +245,14 @@ function renderMsg(m, kind) {
   const cls = isAgent(m.author) ? "agent" : "human";
   const div = document.createElement("div");
   div.className = "msg" + (kind === "thought" ? " thought" : "");
+  // IRC-style @mention highlight for the current user
+  try {
+    const me = nick().toLowerCase();
+    const txt = String(m.text || "");
+    if (me && new RegExp("@" + me.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&") + "\\b", "i").test(txt)) {
+      div.classList.add("mention");
+    }
+  } catch {}
   let text = m.text;
   if (kind === "dm" && typeof text === "string" && text.startsWith("(dm) ")) text = text.slice(5);
   div.innerHTML = `<div class="meta"><span class="author ${cls}">${esc(m.author)}</span><span class="ts">${fmtTs(m.ts)}</span></div><div class="text">${esc(text)}</div>`;
@@ -192,12 +261,22 @@ function renderMsg(m, kind) {
 function addMsg(m, kind) {
   kind = kind || "msg";
   const id = msgId(m);
-  if (renderedIds.has(id)) return;
+  if (renderedIds.has(id)) return null;
   renderedIds.add(id);
   const box = $("#messages");
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  box.appendChild(renderMsg(m, kind));
+  const el = renderMsg(m, kind);
+  box.appendChild(el);
   if (nearBottom) box.scrollTop = box.scrollHeight;
+  return el;
+}
+// Remove an optimistic message (e.g. its send failed).
+function dropOptimistic(cid) {
+  const pend = pendingCid.get(cid);
+  if (!pend) return;
+  pendingCid.delete(cid);
+  renderedIds.delete(pend.id);
+  if (pend.el) pend.el.remove();
 }
 function setLive(on) {
   const b = $("#live-badge");
@@ -221,19 +300,61 @@ function refreshActive() {
   });
 }
 
+function updateUnreadBadges() {
+  // Channel sidebar badges
+  for (const d of document.querySelectorAll("#channels .chan")) {
+    const name = "#" + d.textContent.replace("#", "").trim().split("\n")[0];
+    // extract channel name from the element
+    const c = d._chan;
+    if (!c) continue;
+    let badge = d.querySelector(".unread-badge");
+    const n = unreadCounts[c] || 0;
+    if (n > 0) {
+      if (!badge) { badge = document.createElement("span"); badge.className = "unread-badge"; d.appendChild(badge); }
+      badge.textContent = n;
+    } else if (badge) badge.remove();
+  }
+  // Agent rows: unread in their thought or DM channel
+  for (const d of document.querySelectorAll("#agents .agent-row")) {
+    const agent = d._agent;
+    if (!agent) continue;
+    const n = (unreadCounts[thoughtChannelFor(agent)] || 0) + (unreadCounts[dmChannelFor(agent)] || 0);
+    let badge = d.querySelector(".unread-badge");
+    if (n > 0) {
+      if (!badge) { badge = document.createElement("span"); badge.className = "unread-badge"; d.appendChild(badge); }
+      badge.textContent = n;
+    } else if (badge) badge.remove();
+  }
+}
+
+function clearUnreadForView() {
+  if (view.type === "channel") {
+    delete unreadCounts[view.name];
+  } else if (view.type === "thoughts") {
+    delete unreadCounts[thoughtChannelFor(view.agent)];
+    delete unreadCounts[dmChannelFor(view.agent)];
+  }
+  lastRead[view.type === "channel" ? view.name : view.agent] = Date.now()/1000;
+  saveLastRead();
+  updateUnreadBadges();
+}
+
 async function loadChannels() {
   const {channels} = await api("/api/channels");
   const box = $("#channels"); box.innerHTML = "";
-  // Thought streams live under AGENTS now; keep the channel list clean.
-  const list = (channels || []).filter(c => !c.startsWith("#thoughts-"));
+  // Thought streams live under AGENTS and DMs live in the agent view;
+  // keep the channel list to real channels only.
+  const list = (channels || []).filter(c => !c.startsWith("#thoughts-") && !c.startsWith("#dm-"));
   const all = list.length ? list : ["#general"];
   for (const c of all) {
     const d = document.createElement("div");
     d.className = "chan" + (view.type === "channel" && c === view.name ? " active" : "");
+    d._chan = c;
     d.innerHTML = `<span class="hash">#</span>${esc(c.replace(/^#/,""))}`;
     d.onclick = () => switchChannel(c);
     box.appendChild(d);
   }
+  updateUnreadBadges();
 }
 
 async function loadAgents() {
@@ -244,26 +365,34 @@ async function loadAgents() {
     d.className = "agent" + (view.type === "thoughts" && view.agent === a.name ? " active" : "");
     d.dataset.name = a.name;
     const seedMark = a.seed ? "🌱 " : "";
-    const dotCls = a.presence === "offline" ? "offline" : (a.presence === "working" ? "working" : "online");
-    d.innerHTML = `<span class="dot ${dotCls}"></span>${seedMark}${esc(a.name)}<span class="role">${esc(a.presence)}</span>`;
+    const dotCls = a.thinking ? "thinking" : (a.presence === "offline" ? "offline" : (a.presence === "working" ? "working" : "online"));
+    const modelShort = (a.model || "").replace(/^anthropic:/, "").replace(/^claude-/, "") || "default";
+    d._agent = a.name;
+    d.innerHTML = `<span class="dot ${dotCls}"></span>${seedMark}${esc(a.name)}<span class="role">${esc(a.presence)} · ${esc(modelShort)}</span>`;
     d.onclick = () => openThoughts(a.name);
     box.appendChild(d);
   }
   if (!agents.length) box.innerHTML = `<div class="sys">no agents yet</div>`;
+  updateUnreadBadges();
 }
 
 function closeSockets() {
   viewSeq++;
   for (const s of [ws, dmWs]) { try { s && s.close(); } catch {} }
   ws = dmWs = null;
-  sentIds.clear(); renderedIds.clear();
+  pendingCid.clear(); renderedIds.clear();
 }
 
 function switchChannel(c) {
   closeSockets();
   view = {type: "channel", name: c};
+  clearUnreadForView();
+  loadChanSubs(c);
   $("#chan-name").textContent = c;
   $("#view-tag").style.display = "none";
+  $("#model-picker").style.display = "none";
+  $("#subs-panel").style.display = "none";
+  $("#deregister-btn").style.display = "none";
   $("#input").placeholder = `Message ${c} — agents wake on @mentions`;
   $("#messages").innerHTML = "";
   refreshActive();
@@ -272,11 +401,24 @@ function switchChannel(c) {
 
 async function openThoughts(agent) {
   closeSockets();
+  $("#chan-subs").style.display = "none";
   const seq = viewSeq;
   view = {type: "thoughts", agent};
   $("#chan-name").textContent = agent;
   const vt = $("#view-tag"); vt.style.display = ""; vt.textContent = "thoughts";
   $("#input").placeholder = `Message ${agent} directly…`;
+  await loadModelPicker(agent);
+  await loadSubs(agent);
+  const dg = $("#deregister-btn");
+  dg.style.display = "";
+  dg.onclick = async () => {
+    if (!confirm(`Deregister ${agent}? Their loop stops, files are archived (not deleted).`)) return;
+    try {
+      await api(`/api/agents/${encodeURIComponent(agent)}`, {method: "DELETE"});
+      switchChannel("#general");
+      loadAgents();
+    } catch (e) { alert("Deregister failed: " + e.message); }
+  };
   $("#messages").innerHTML = "";
   refreshActive();
   // Merged history: internal monologue + DM conversation, chronological.
@@ -289,6 +431,7 @@ async function openThoughts(agent) {
     .sort((a, b) => a[0].ts - b[0].ts)
     .forEach(([m, kind]) => addMsg(m, kind));
   $("#messages").scrollTop = $("#messages").scrollHeight;
+  clearUnreadForView();
   connectThoughts(tCh, dCh, seq);
 }
 
@@ -307,13 +450,31 @@ function channelSocket(channel, kind, seq, onLive) {
     setTimeout(() => { if (seq === viewSeq) onLive(); }, 3000);
   };
   s.onmessage = ev => {
-    if (seq !== viewSeq) return;
+    if (seq !== viewSeq) { console.debug("[ws] stale msg dropped", channel, "seq", seq, "viewSeq", viewSeq); return; }
     const p = JSON.parse(ev.data);
+    console.debug("[ws] recv", channel, p.type || "msg", (p.text||"").slice(0,40));
+    // Unread: message for a channel we're not viewing
+    if (!p.type && p.ts) {
+      const viewing = (view.type === "channel" && view.name === channel) ||
+        (view.type === "thoughts" && (thoughtChannelFor(view.agent) === channel || dmChannelFor(view.agent) === channel));
+      if (!viewing) {
+        unreadCounts[channel] = (unreadCounts[channel] || 0) + 1;
+        updateUnreadBadges();
+      } else {
+        lastRead[channel] = Date.now()/1000; saveLastRead();
+      }
+    }
     if (p.type === "history") { p.messages.forEach(m => addMsg(m, kind)); $("#messages").scrollTop = $("#messages").scrollHeight; }
     else if (p.ts) {
-      const id = msgId(p);
-      if (!sentIds.has(id)) addMsg(p, kind);
-      sentIds.delete(id);
+      if (p.cid && pendingCid.has(p.cid)) {
+        // Authoritative echo of our optimistic message: swap it in so
+        // exactly one copy renders, with the server's timestamp.
+        const pend = pendingCid.get(p.cid);
+        pendingCid.delete(p.cid);
+        renderedIds.delete(pend.id);
+        if (pend.el) pend.el.remove();
+      }
+      addMsg(p, kind);
     }
   };
   return s;
@@ -342,29 +503,184 @@ async function send() {
   const text = $("#input").value.trim(), author = nick();
   if (!text) return;
   $("#input").value = "";
+  const cid = newCid();
+  const track = (msg, kind) => {
+    const el = addMsg(msg, kind);
+    if (el) pendingCid.set(cid, {id: msgId(msg), el});
+  };
   if (view.type === "thoughts") {
     // DM the agent directly; it lands in the deterministic DM channel.
     const agent = view.agent;
-    const optimistic = {ts: Date.now()/1000, author, text};
-    addMsg(optimistic, "dm");
-    sentIds.add(optimistic.ts + "|" + author + "|" + "(dm) " + text);
-    await api("/api/dm", {method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({sender: author, recipient: agent, text})});
+    track({ts: Date.now()/1000, author, text, cid}, "dm");
+    try {
+      await api("/api/dm", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({sender: author, recipient: agent, text, cid})});
+    } catch (e) { dropOptimistic(cid); throw e; }
     loadChannels(); // surface the DM channel in the sidebar
   } else {
-    // Optimistic render: show immediately, dedupe when broadcast arrives.
-    const optimistic = {ts: Date.now()/1000, author, text};
-    addMsg(optimistic, "msg");
-    sentIds.add(msgId(optimistic));
+    // Optimistic render: show immediately; the broadcast echo (matched by
+    // cid) swaps in the authoritative copy so exactly one renders.
+    const kind = view.name.startsWith("#dm-") ? "dm" : "msg";
+    track({ts: Date.now()/1000, author, text, cid}, kind);
     if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({type: "post", author, text}));
+      ws.send(JSON.stringify({type: "post", author, text, cid}));
     } else {
-      await api(`/api/channels/${encodeURIComponent(view.name)}/messages`,
-        {method: "POST", headers: {"Content-Type": "application/json"},
-         body: JSON.stringify({author, text})});
+      try {
+        await api(`/api/channels/${encodeURIComponent(view.name)}/messages`,
+          {method: "POST", headers: {"Content-Type": "application/json"},
+           body: JSON.stringify({author, text, cid})});
+      } catch (e) { dropOptimistic(cid); throw e; }
     }
   }
 }
+
+let modelCache = null;
+async function loadModelPicker(agent) {
+  const sel = $("#model-picker");
+  try {
+    if (!modelCache) modelCache = (await api("/api/models")).models || [];
+    const {agents} = await api("/api/agents");
+    const me = (agents || []).find(a => a.name === agent);
+    const current = (me && me.model) || "";
+    sel.innerHTML = `<option value="">default</option>` + modelCache.map(m =>
+      `<option value="${esc(m)}"${m === current ? " selected" : ""}>${esc(m.replace(/^anthropic:/, ""))}</option>`).join("");
+    // Current model may not be in the catalog (custom) — still show it.
+    if (current && !modelCache.includes(current)) {
+      const o = document.createElement("option");
+      o.value = current; o.textContent = current.replace(/^anthropic:/, ""); o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.style.display = "";
+    sel.onchange = async () => {
+      const model = sel.value || null;
+      await api(`/api/agents/${encodeURIComponent(agent)}`,
+        {method: "PATCH", headers: {"Content-Type": "application/json"},
+         body: JSON.stringify({model})});
+      loadAgents(); // refresh the model label in the sidebar
+    };
+  } catch { sel.style.display = "none"; }
+}
+
+async function loadChanSubs(channel) {
+  const panel = $("#chan-subs");
+  panel.style.display = "";
+  panel.innerHTML = '<span class="subs-label">listening:</span>';
+  let agents = [];
+  try { agents = (await api("/api/agents")).agents || []; } catch { return; }
+  for (const a of agents) {
+    const name = a.name;
+    if (name === "seed") continue;  // seed listens everywhere
+    let subs = {};
+    try { subs = (await api(`/api/agents/${encodeURIComponent(name)}/subscriptions`)).channels || {}; } catch {}
+    const on = channel in subs;
+    const pill = document.createElement("span");
+    pill.className = "sub-toggle " + (on ? "on" : "off");
+    pill.textContent = (on ? "● " : "○ ") + name;
+    pill.title = on ? `${name} is listening — click to unsubscribe` : `${name} is not listening — click to subscribe`;
+    pill.onclick = async () => {
+      try {
+        await api(`/api/agents/${encodeURIComponent(name)}/subscriptions`, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({channel, subscribed: !on})});
+        loadChanSubs(channel);
+      } catch (e) { alert("Toggle failed: " + e.message); }
+    };
+    panel.appendChild(pill);
+  }
+}
+
+async function loadSubs(agent) {
+  const panel = $("#subs-panel"), list = $("#subs-list");
+  try {
+    const [{channels}, subData] = await Promise.all([
+      api("/api/channels"),
+      api(`/api/agents/${encodeURIComponent(agent)}/subscriptions`),
+    ]);
+    const subs = (subData && subData.channels) || {};
+    // Only real channels (no thought streams / DMs).
+    const chans = (channels || []).filter(c => !c.startsWith("#thoughts-") && !c.startsWith("#dm-"));
+    list.innerHTML = "";
+    for (const c of chans) {
+      const on = !!subs[c];
+      const b = document.createElement("button");
+      b.className = "sub-toggle " + (on ? "on" : "off");
+      b.textContent = (on ? "✓ " : "+ ") + c;
+      b.title = on ? `Unsubscribe ${agent} from ${c}` : `Subscribe ${agent} to ${c}`;
+      b.onclick = async () => {
+        await api(`/api/agents/${encodeURIComponent(agent)}/subscriptions`,
+          {method: "POST", headers: {"Content-Type": "application/json"},
+           body: JSON.stringify({channel: c, subscribed: !on})});
+        loadSubs(agent);
+      };
+      list.appendChild(b);
+    }
+    panel.style.display = chans.length ? "" : "none";
+  } catch { panel.style.display = "none"; }
+}
+
+const fmtTok = n => n >= 1e6 ? (n/1e6).toFixed(1) + "M" : n >= 1e3 ? (n/1e3).toFixed(1) + "k" : String(n);
+const fmtUsd = n => "$" + n.toFixed(2);
+const fmtEta = h => h == null ? "—" : h <= 0 ? "empty" : h < 1 ? Math.round(h*60) + "m" : h < 48 ? h.toFixed(1) + "h" : Math.round(h/24) + "d";
+
+async function loadUsage() {
+  try {
+    const u = await api("/api/usage");
+    const s = u.summary, eta = u.eta;
+    let txt = `\u{1F525} ${fmtTok(s.total_tokens)} tok / ${fmtUsd(s.cost_usd)}`;
+    let cls = "";
+    if (eta.eta_hours != null) {
+      txt += ` · ~${fmtEta(eta.eta_hours)} left`;
+      if (eta.eta_hours < 2) cls = "crit";
+      else if (eta.eta_hours < 8) cls = "warn";
+    } else if (eta.credit_balance_usd == null) {
+      txt += " · set credit balance";
+    }
+    const w = $("#usage-summary");
+    w.innerHTML = `<span class="${cls}">${esc(txt)}</span>`;
+    w.dataset.full = JSON.stringify(u);
+  } catch { $("#usage-summary").textContent = "usage n/a"; }
+}
+
+function toggleUsagePanel() {
+  const p = $("#usage-panel");
+  if (p.style.display !== "none") { p.style.display = "none"; return; }
+  let u = {};
+  try { u = JSON.parse($("#usage-summary").dataset.full || "{}"); } catch {}
+  const s = u.summary || {}, eta = u.eta || {}, byAgent = s.by_agent || {};
+  const burn1 = (u.burn_1h || {}).cost_per_hour, burn24 = (u.burn_24h || {}).cost_per_hour;
+  let html = `<h4>Usage</h4>
+    <div class="urow"><span>total tokens</span><span>${fmtTok(s.total_tokens || 0)}</span></div>
+    <div class="urow"><span>in / out</span><span>${fmtTok(s.input_tokens || 0)} / ${fmtTok(s.output_tokens || 0)}</span></div>
+    <div class="urow"><span>cost</span><span>${fmtUsd(s.cost_usd || 0)}${s.cost_estimated ? " (est)" : ""}</span></div>
+    <div class="urow"><span>burn 1h / 24h</span><span>${fmtUsd(burn1 || 0)}/h · ${fmtUsd(burn24 || 0)}/h</span></div>`;
+  const agents = Object.entries(byAgent).sort((a,b) => b[1].cost_usd - a[1].cost_usd);
+  if (agents.length) {
+    html += `<h4 style="margin-top:10px">By agent</h4>`;
+    const max = Math.max(...agents.map(([,a]) => a.cost_usd), 0.0001);
+    for (const [name, a] of agents) {
+      const pct = Math.round(100 * a.cost_usd / max);
+      html += `<div class="urow"><span>${esc(name)}</span><span>${fmtTok(a.input_tokens + a.output_tokens)} · ${fmtUsd(a.cost_usd)}</span></div>
+      <div class="bar"><div style="width:${pct}%"></div></div>`;
+    }
+  }
+  const bal = eta.credit_balance_usd;
+  html += `<h4 style="margin-top:10px">Credits</h4>
+    <div class="urow"><span>balance</span><span>${bal != null ? fmtUsd(bal) : "not set"}</span></div>
+    <div class="urow"><span>remaining</span><span>${eta.remaining_usd != null ? fmtUsd(eta.remaining_usd) : "—"}</span></div>
+    <div class="urow"><span>runway</span><span>${eta.eta_hours != null ? "~" + fmtEta(eta.eta_hours) + " at current burn" : "set balance for ETA"}</span></div>
+    <div class="urow"><span>set balance $</span><span><input id="bal-input" type="number" min="0" step="0.01" placeholder="${bal != null ? bal : "0.00"}"> <button id="bal-save">save</button></span></div>`;
+  p.innerHTML = html;
+  p.style.display = "";
+  $("#bal-save").onclick = async () => {
+    const v = parseFloat($("#bal-input").value);
+    if (isNaN(v) || v < 0) return;
+    await api("/api/usage/balance", {method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({balance_usd: v})});
+    loadUsage(); toggleUsagePanel(); toggleUsagePanel();
+  };
+}
+
+$("#usage-widget").onclick = toggleUsagePanel;
 
 $("#send").onclick = send;
 $("#input").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
@@ -376,7 +692,7 @@ $("#add-chan").onclick = async () => {
   await loadChannels(); switchChannel("#" + name.replace(/^#+/, ""));
 };
 
-(async () => { await loadChannels(); await loadAgents(); switchChannel("#general"); setInterval(loadAgents, 15000); })();
+(async () => { await loadChannels(); await loadAgents(); await loadUsage(); switchChannel("#general"); setInterval(loadAgents, 15000); setInterval(loadUsage, 60000); })();
 </script>
 </body>
 </html>

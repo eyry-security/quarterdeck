@@ -1,4 +1,4 @@
-"""Tests for the Quarterdeck agent runtime: AgentRunner, Orchestrator, Seed, Daemon."""
+"""Tests for the Quarterdeck agent runtime: AgentRunner, Seed, Daemon, wakeup."""
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +10,6 @@ import pytest
 
 from quarterdeck.agent import AgentRunner, llm_available
 from quarterdeck.daemon import Daemon
-from quarterdeck.orchestrator import Orchestrator
 from quarterdeck.seed import SeedRunner
 
 
@@ -30,8 +29,11 @@ class TestAgentRunner:
         r = AgentRunner("tester", home=home)
         names = sorted(t.name for t in r.file_tools())
         assert names == [
+            "quarterdeck_compact_memory",
             "quarterdeck_memory_read",
             "quarterdeck_memory_write",
+            "quarterdeck_rewrite_memory",
+            "quarterdeck_rewrite_prompt",
             "quarterdeck_runbook_read",
             "quarterdeck_runbook_update",
         ]
@@ -96,30 +98,30 @@ class TestAgentRunner:
         asyncio.run(main())
 
 
-# ------------------------------------------------------------ Orchestrator
-class TestOrchestrator:
-    def test_fallback_wakeup_without_llm(self, home, monkeypatch):
-        monkeypatch.setattr("quarterdeck.orchestrator.llm_available", lambda: False)
-        orch = Orchestrator(home=home)
-        prompt = orch.generate_wakeup("scout")
-        assert "scout" in prompt
-        assert "First actions" in prompt
-        # Persisted for the runner to consume.
-        wf = home / "agents" / "scout" / "wakeup.json"
-        assert wf.exists()
-        assert json.loads(wf.read_text())["prompt"] == prompt
+# ------------------------------------------------------------ Wakeup (mechanical)
+class TestWakeup:
+    def test_build_wakeup_prompt(self):
+        from quarterdeck.wakeup import build_wakeup_prompt
+        p = build_wakeup_prompt("scout", "I watch the scope", "runbook text",
+                                ["#general"])
+        assert "scout" in p
+        assert "I watch the scope" in p
+        assert "First actions" in p
 
-    def test_wakeup_logged_to_thoughts(self, home, monkeypatch):
-        monkeypatch.setattr("quarterdeck.orchestrator.llm_available", lambda: False)
-        orch = Orchestrator(home=home)
-        orch.generate_wakeup("scout")
-        from quarterdeck.chat import Chat
-        msgs = Chat(home=home).history("#thoughts-scout", n=5)
-        assert any("wakeup prompt" in m["text"] for m in msgs)
+    def test_write_wakeup(self, home):
+        from quarterdeck.wakeup import build_wakeup_prompt, write_wakeup
+        import json
+        prompt = build_wakeup_prompt("scout")
+        f = write_wakeup(home, "scout", prompt)
+        assert f.exists()
+        assert json.loads(f.read_text())["prompt"] == prompt
 
-    def test_wake_tool_name(self, home):
-        orch = Orchestrator(home=home)
-        assert orch.wake_tool().name == "quarterdeck_wake"
+    def test_seed_wake_tool(self, home):
+        d = Daemon(home=home)
+        seed = SeedRunner("seed", home=home, daemon=d)
+        names = [t.name for t in seed.all_tools()]
+        assert "quarterdeck_wake" in names
+        assert "quarterdeck_register_agent" in names
 
 
 # ------------------------------------------------------------------- Seed
@@ -128,16 +130,10 @@ class TestSeed:
         d = Daemon(home=home)
         seed = SeedRunner("seed", home=home, daemon=d)
         tool = {t.name: t for t in seed.all_tools()}["quarterdeck_register_agent"]
-        # generate_wakeup needs no LLM (fallback) — fine.
-        import quarterdeck.orchestrator as orch_mod
-        orig = orch_mod.llm_available
-        orch_mod.llm_available = lambda: False
-        try:
-            res = tool.invoke({"name": "newbie",
-                               "identify": "I am newbie",
-                               "runbook": "be helpful"})
-        finally:
-            orch_mod.llm_available = orig
+        # generate_wakeup is mechanical (no LLM) — fine.
+        res = tool.invoke({"name": "newbie",
+                           "identify": "I am newbie",
+                           "runbook": "be helpful"})
         assert "registered and woken" in res
         assert seed.registry.exists("newbie")
         assert "I am newbie" in seed.files.read("newbie", "identify.md")
@@ -183,19 +179,34 @@ class TestSeed:
 # ----------------------------------------------------------------- Daemon
 class TestDaemon:
     def test_boot_order_and_heartbeat(self, home, monkeypatch):
-        # No LLM: runners boot, wake with fallback prompts, idle.
+        # No LLM: runners boot, idle (wakeup prompts are spawn-time only).
         monkeypatch.setattr("quarterdeck.agent.llm_available", lambda: False)
-        monkeypatch.setattr("quarterdeck.orchestrator.llm_available", lambda: False)
         d = Daemon(home=home)
         d.registry.spawn("scout", system_prompt="scout things", sandbox="local")
 
         async def main():
             boot = asyncio.create_task(d.run())
             await asyncio.sleep(1.5)
-            # seed + orchestrator + scout should be up
-            assert set(d.tasks) >= {"seed", "orchestrator", "scout"}
+            # seed + scout should be up; no orchestrator anymore
+            assert set(d.tasks) >= {"seed", "scout"}
+            assert "orchestrator" not in d.tasks
             hb = json.loads((home / "daemon.json").read_text())
-            assert set(hb["agents"]) >= {"seed", "orchestrator", "scout"}
+            assert set(hb["agents"]) >= {"seed", "scout"}
+            d.stop()
+            await asyncio.wait_for(boot, timeout=10)
+
+        asyncio.run(main())
+
+    def test_boot_retires_legacy_orchestrator(self, home, monkeypatch):
+        monkeypatch.setattr("quarterdeck.agent.llm_available", lambda: False)
+        d = Daemon(home=home)
+        d.registry.spawn("orchestrator", system_prompt="legacy", sandbox="local")
+
+        async def main():
+            boot = asyncio.create_task(d.run())
+            await asyncio.sleep(1.0)
+            assert not d.registry.exists("orchestrator")
+            assert "orchestrator" not in d.tasks
             d.stop()
             await asyncio.wait_for(boot, timeout=10)
 
@@ -203,7 +214,6 @@ class TestDaemon:
 
     def test_ensure_runner_soon(self, home, monkeypatch):
         monkeypatch.setattr("quarterdeck.agent.llm_available", lambda: False)
-        monkeypatch.setattr("quarterdeck.orchestrator.llm_available", lambda: False)
         d = Daemon(home=home)
 
         async def main():
@@ -220,7 +230,6 @@ class TestDaemon:
 
     def test_crashed_runner_restarts(self, home, monkeypatch):
         monkeypatch.setattr("quarterdeck.agent.llm_available", lambda: False)
-        monkeypatch.setattr("quarterdeck.orchestrator.llm_available", lambda: False)
         d = Daemon(home=home)
         d.registry.spawn("flaky", system_prompt="x", sandbox="local")
 

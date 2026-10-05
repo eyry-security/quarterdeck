@@ -69,4 +69,6 @@ def test_post_publishes_chat_message_event(tmp_path):
 
 def test_persisted_message_shape_remains_v0_compatible(chat):
     message = chat.post("#general", "you", "hello")
-    assert set(message) == {"ts", "channel", "author", "text"}
+    # v0 fields plus stable unique "id" (and optional "cid" when provided).
+    assert {"ts", "channel", "author", "text", "id"} <= set(message)
+    assert isinstance(message["id"], str) and message["id"]

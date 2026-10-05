@@ -6,6 +6,9 @@ Run: quarterdeck serve [--port 8420]  (or python -m quarterdeck.web)
 
 from __future__ import annotations
 
+import os
+import re
+
 import asyncio
 import json
 import time
@@ -17,17 +20,31 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .agent_files import AGENT_FILES, AgentFiles
-from .agent_registry import AgentRegistry
-from .chat import Chat, sanitize_channel
+from .agent_registry import AgentRegistry, RegistryError
+from .chat import Chat, add_post_listener, sanitize_channel
 from .thoughts import mount_thought_routes
 from .events import EventBus
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+DEFAULT_MODELS = [
+    "anthropic:claude-opus-4-6",
+    "anthropic:claude-sonnet-4-6",
+    "anthropic:claude-haiku-4-5",
+]
+
+
+def available_models() -> list[str]:
+    env = os.environ.get("QUARTERDECK_MODELS", "").strip()
+    if env:
+        return [m.strip() for m in env.split(",") if m.strip()]
+    return list(DEFAULT_MODELS)
+
 
 class PostMessage(BaseModel):
     author: str
     text: str
+    cid: str | None = None
 
 
 class CreateChannel(BaseModel):
@@ -48,6 +65,27 @@ class DM(BaseModel):
     sender: str
     recipient: str
     text: str
+    cid: str | None = None
+
+
+class UpdateAgent(BaseModel):
+    model: str | None = None
+
+
+class SubToggle(BaseModel):
+    channel: str
+    subscribed: bool
+
+
+class CreditBalance(BaseModel):
+    balance_usd: float | None = None
+
+
+def _swallow_future(fut) -> None:
+    try:
+        fut.result()
+    except Exception:
+        pass
 
 
 def dm_channel(a: str, b: str) -> str:
@@ -59,13 +97,63 @@ def dm_channel(a: str, b: str) -> str:
 class Room:
     """Live room state: chat, registry, files, websocket subscribers."""
 
-    def __init__(self, home: Path | None = None):
+    def __init__(self, home: Path | None = None, daemon=None):
         self.bus = EventBus()
         self.chat = Chat(home=home, bus=self.bus)
         self.registry = AgentRegistry(home=home)
         self.files = AgentFiles(home=home)
+        self.daemon = daemon
         self._subs: dict[str, set[WebSocket]] = {}
         self._lock = asyncio.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        # Every stored message — including ones written by the agent daemon
+        # in its own thread (thoughts, seed posts, agent DMs) — fans out to
+        # websocket subscribers. This replaces per-endpoint broadcast calls.
+        add_post_listener(self._on_chat_post)
+
+    def _on_chat_post(self, channel: str, msg: dict) -> None:
+        """Forward a stored message to WS subscribers. May run on any thread."""
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+        try:
+            fut = asyncio.run_coroutine_threadsafe(self.broadcast(channel, msg), loop)
+        except RuntimeError:
+            return
+        fut.add_done_callback(_swallow_future)
+
+    def wake_agent(self, name: str, reason: str = "dm") -> bool:
+        """Nudge an agent's runner to poll immediately (thread-safe)."""
+        d = self.daemon
+        if d is None:
+            return False
+        try:
+            return bool(d.wake_agent(name, reason))
+        except Exception:
+            return False
+
+    def wake_mentioned(self, text: str) -> None:
+        """Wake any registered agent @mentioned in text."""
+        for name in set(re.findall(r"@([A-Za-z0-9_-]+)", text or "")):
+            self.wake_agent(name, "mention")
+
+    def wake_subscribers(self, channel: str) -> None:
+        """Wake every agent subscribed to this channel — any message wakes."""
+        d = self.daemon
+        if d is None:
+            return
+        from . import subscriptions
+        try:
+            runners = list(d.runners.keys())
+        except Exception:
+            return
+        for name in runners:
+            try:
+                subs = subscriptions.get_subscriptions(name, home=self.chat.home)
+                if channel in subs.get("channels", {}):
+                    d.wake_agent(name, "channel-activity")
+            except Exception:
+                pass
 
     async def subscribe(self, channel: str, ws: WebSocket):
         channel = sanitize_channel(channel)
@@ -81,6 +169,10 @@ class Room:
         channel = sanitize_channel(channel)
         async with self._lock:
             targets = list(self._subs.get(channel, ()))
+        import logging
+        logging.getLogger("qd.ws").debug(
+            "broadcast %s -> %d subs (msg %s)", channel, len(targets),
+            str(msg.get("id", "?"))[:24])
         dead = []
         for ws in targets:
             try:
@@ -92,13 +184,14 @@ class Room:
                 for ws in dead:
                     self._subs.get(channel, set()).discard(ws)
 
-    def post(self, channel: str, author: str, text: str) -> dict:
-        msg = self.chat.post(channel, author, text)
+    def post(self, channel: str, author: str, text: str,
+             cid: str | None = None) -> dict:
+        msg = self.chat.post(channel, author, text, cid=cid)
         return msg
 
 
-def create_app(home: Path | None = None) -> FastAPI:
-    room = Room(home=home)
+def create_app(home: Path | None = None, daemon=None) -> FastAPI:
+    room = Room(home=home, daemon=daemon)
     app = FastAPI(title="Quarterdeck")
 
     @app.get("/api/channels")
@@ -121,17 +214,21 @@ def create_app(home: Path | None = None) -> FastAPI:
     @app.post("/api/channels/{channel}/messages")
     async def post_message(channel: str, body: PostMessage):
         try:
-            msg = room.post(channel, body.author, body.text)
+            msg = room.post(channel, body.author, body.text, cid=body.cid)
         except ValueError as e:
             raise HTTPException(400, str(e))
-        await room.broadcast(channel, msg)
+        # Broadcast happens via the chat post-listener.
+        # Any message wakes @mentioned agents AND channel subscribers.
+        room.wake_mentioned(body.text)
+        room.wake_subscribers(sanitize_channel(channel))
         return msg
 
     @app.post("/api/dm")
     async def send_dm(body: DM):
         channel = dm_channel(body.sender, body.recipient)
-        msg = room.post(channel, body.sender, f"(dm) {body.text}")
-        await room.broadcast(channel, msg)
+        msg = room.post(channel, body.sender, f"(dm) {body.text}", cid=body.cid)
+        # A DM always wakes the recipient agent immediately — no @mention needed.
+        room.wake_agent(body.recipient, "dm")
         return {"channel": channel, "message": msg}
 
     @app.get("/api/agents")
@@ -149,6 +246,16 @@ def create_app(home: Path | None = None) -> FastAPI:
         except Exception:
             alive = set()
         agents = []
+        # Thinking state from live runners (thread-safe attribute read).
+        thinking = set()
+        try:
+            dmn = room.daemon
+            if dmn is not None:
+                for rn, runner in list(getattr(dmn, "runners", {}).items()):
+                    if getattr(runner, "_thinking", False):
+                        thinking.add(rn)
+        except Exception:
+            pass
         for a in room.registry.list():
             d = a.to_dict() if hasattr(a, "to_dict") else dict(a)
             name = d.get("name", "")
@@ -156,10 +263,76 @@ def create_app(home: Path | None = None) -> FastAPI:
                 d["presence"] = "working" if d.get("state") == "working" else "online"
             else:
                 d["presence"] = "offline"
+            d["thinking"] = name in thinking
             if name == "seed":
                 d["seed"] = True
             agents.append(d)
         return {"agents": agents}
+
+    @app.get("/api/models")
+    def list_models():
+        return {"models": available_models()}
+
+    @app.patch("/api/agents/{name}")
+    def update_agent(name: str, body: UpdateAgent):
+        try:
+            agent = room.registry.set_model(name, body.model)
+        except RegistryError as e:
+            raise HTTPException(404, str(e))
+        # The runner picks up the model change on its next turn (no restart).
+        room.wake_agent(name, "model-change")
+        d = agent.to_dict() if hasattr(agent, "to_dict") else dict(agent)
+        return d
+
+    @app.get("/api/agents/{name}/subscriptions")
+    def get_agent_subs(name: str):
+        from . import subscriptions
+        return subscriptions.get_subscriptions(name, home=room.chat.home)
+
+    @app.post("/api/agents/{name}/subscriptions")
+    def set_agent_sub(name: str, body: SubToggle):
+        from . import subscriptions
+        home = room.chat.home
+        if body.subscribed:
+            result = subscriptions.subscribe(name, [body.channel], home=home)
+        else:
+            result = subscriptions.unsubscribe(name, [body.channel], home=home)
+        # Wake so the runner picks up subscription changes promptly.
+        room.wake_agent(name, "sub-change")
+        return result
+
+    @app.get("/api/usage")
+    def get_usage():
+        from . import usage as usage_mod
+        home = room.chat.home
+        return {
+            "summary": usage_mod.summary(home=home),
+            "burn_1h": usage_mod.burn_rate(home=home, window_hours=1.0),
+            "burn_24h": usage_mod.burn_rate(home=home, window_hours=24.0),
+            "eta": usage_mod.credit_eta(home=home),
+        }
+
+    @app.put("/api/usage/balance")
+    def set_balance(body: CreditBalance):
+        from . import usage as usage_mod
+        return {"credit_balance_usd": usage_mod.set_credit_balance(
+            body.balance_usd, home=room.chat.home)}
+
+    @app.delete("/api/agents/{name}")
+    async def delete_agent(name: str):
+        d = room.daemon
+        if d is None or getattr(d, "_loop", None) is None:
+            raise HTTPException(500, "agent daemon not running")
+        fut = asyncio.run_coroutine_threadsafe(d.deregister(name), d._loop)
+        try:
+            result = await asyncio.wrap_future(fut)
+        except Exception as e:
+            raise HTTPException(500, str(e))
+        if result.get("status") == "error":
+            raise HTTPException(400, result.get("error", "deregister failed"))
+        if result.get("status") == "not-running":
+            raise HTTPException(404, f"no running agent named {name!r}")
+        return result
 
     @app.post("/api/agents")
     def create_agent(body: CreateAgent):
@@ -192,6 +365,7 @@ def create_app(home: Path | None = None) -> FastAPI:
 
     @app.websocket("/ws/{channel}")
     async def ws_channel(ws: WebSocket, channel: str):
+        room._loop = asyncio.get_running_loop()
         await ws.accept()
         channel = sanitize_channel(channel)
         await room.subscribe(channel, ws)
@@ -208,11 +382,11 @@ def create_app(home: Path | None = None) -> FastAPI:
                     continue
                 if payload.get("type") == "post":
                     try:
-                        msg = room.post(channel, payload.get("author", "?"),
-                                        payload.get("text", ""))
+                        room.post(channel, payload.get("author", "?"),
+                                  payload.get("text", ""),
+                                  cid=payload.get("cid"))
                     except ValueError:
                         continue
-                    await room.broadcast(channel, msg)
                 elif payload.get("type") == "ping":
                     await ws.send_json({"type": "pong", "ts": time.time()})
         except WebSocketDisconnect:
