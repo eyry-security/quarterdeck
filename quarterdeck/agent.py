@@ -65,6 +65,7 @@ class AgentRunner:
         self._stop = asyncio.Event()
         self._wake_event = asyncio.Event()
         self._wake_reason = ""
+        self._thinking = False  # True while an LLM call is in flight
         self._pending_obs: list[dict] = []
         self._pinnace = None
         self._pinnace_model: str | None = None
@@ -522,6 +523,13 @@ class AgentRunner:
         if not llm_available():
             self._note("no LLM API key; skipping act")
             return
+        self._thinking = True
+        try:
+            await self._act_inner(context)
+        finally:
+            self._thinking = False
+
+    async def _act_inner(self, context: str) -> None:
         context = context[:MAX_CONTEXT_CHARS]
         self._note(f"acting on {len(context)} chars of context")
         post_thought(self.name,
@@ -546,16 +554,13 @@ class AgentRunner:
             post_thought(self.name, f"⚠️ run failed: {type(e).__name__}: {e}",
                          home=self.home)
             return
+        # Usage goes to usage.jsonl only (credits dashboard) — never surfaced
+        # as a chat/thought message.
         try:
-            n = usage_mod.record_pinnace_usage(
+            usage_mod.record_pinnace_usage(
                 self.name, getattr(result, "usage", None) or [], home=self.home)
-            if n:
-                self._note(f"usage: {n} inference(s) logged")
         except Exception:
             pass
-        final = (result.final or "").strip()
-        if final and final != "IDLE":
-            self._note(f"turn done ({result.turns} turns)")
 
     def _note(self, text: str) -> None:
         """Best-effort note to the thought stream (daemon visibility)."""

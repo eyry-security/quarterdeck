@@ -246,6 +246,16 @@ def create_app(home: Path | None = None, daemon=None) -> FastAPI:
         except Exception:
             alive = set()
         agents = []
+        # Thinking state from live runners (thread-safe attribute read).
+        thinking = set()
+        try:
+            dmn = room.daemon
+            if dmn is not None:
+                for rn, runner in list(getattr(dmn, "runners", {}).items()):
+                    if getattr(runner, "_thinking", False):
+                        thinking.add(rn)
+        except Exception:
+            pass
         for a in room.registry.list():
             d = a.to_dict() if hasattr(a, "to_dict") else dict(a)
             name = d.get("name", "")
@@ -253,6 +263,7 @@ def create_app(home: Path | None = None, daemon=None) -> FastAPI:
                 d["presence"] = "working" if d.get("state") == "working" else "online"
             else:
                 d["presence"] = "offline"
+            d["thinking"] = name in thinking
             if name == "seed":
                 d["seed"] = True
             agents.append(d)

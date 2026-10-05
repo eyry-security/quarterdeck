@@ -82,6 +82,9 @@ header .sub { color: var(--muted); font-size: 13px; }
 .chan .hash { color: var(--muted); font-family: var(--mono); }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.dot.thinking { background: transparent; border: 2px solid var(--accent1); border-top-color: transparent;
+  animation: spin 0.8s linear infinite; box-shadow: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .dot.working { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
 .agent .dot.offline { background: var(--red); box-shadow: none; }
 .agent .role { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono); }
@@ -110,6 +113,9 @@ header .sub { color: var(--muted); font-size: 13px; }
 #chan-subs { padding: 6px 16px; border-bottom: 1px solid var(--line); font-size: 11px;
   color: var(--dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #chan-subs .subs-label { font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; }
+.msg.mention { background: rgba(88, 101, 242, 0.12); border-left: 3px solid var(--accent1); padding-left: 9px; }
+.unread-badge { background: var(--accent1); color: #fff; border-radius: 10px; font-size: 10px;
+  padding: 1px 7px; margin-left: 6px; font-family: var(--mono); font-weight: 700; }
 #subs-panel { padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 11px;
   color: var(--dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #subs-panel .subs-label { font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; }
@@ -211,6 +217,12 @@ let view = {type: "channel", name: "#general"};
 let viewSeq = 0;
 let ws = null, dmWs = null;
 const renderedIds = new Set();
+// Unread tracking: channel -> timestamp of last view. Persisted.
+const unreadKey = "qd-unread";
+let lastRead = {};
+try { lastRead = JSON.parse(localStorage.getItem(unreadKey) || "{}"); } catch {}
+const saveLastRead = () => { try { localStorage.setItem(unreadKey, JSON.stringify(lastRead)); } catch {} };
+let unreadCounts = {};  // channel -> count
 // cid -> {id, el}: optimistic messages awaiting their authoritative echo.
 const pendingCid = new Map();
 const newCid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
@@ -233,6 +245,14 @@ function renderMsg(m, kind) {
   const cls = isAgent(m.author) ? "agent" : "human";
   const div = document.createElement("div");
   div.className = "msg" + (kind === "thought" ? " thought" : "");
+  // IRC-style @mention highlight for the current user
+  try {
+    const me = nick().toLowerCase();
+    const txt = String(m.text || "");
+    if (me && new RegExp("@" + me.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&") + "\\b", "i").test(txt)) {
+      div.classList.add("mention");
+    }
+  } catch {}
   let text = m.text;
   if (kind === "dm" && typeof text === "string" && text.startsWith("(dm) ")) text = text.slice(5);
   div.innerHTML = `<div class="meta"><span class="author ${cls}">${esc(m.author)}</span><span class="ts">${fmtTs(m.ts)}</span></div><div class="text">${esc(text)}</div>`;
@@ -280,6 +300,45 @@ function refreshActive() {
   });
 }
 
+function updateUnreadBadges() {
+  // Channel sidebar badges
+  for (const d of document.querySelectorAll("#channels .chan")) {
+    const name = "#" + d.textContent.replace("#", "").trim().split("\n")[0];
+    // extract channel name from the element
+    const c = d._chan;
+    if (!c) continue;
+    let badge = d.querySelector(".unread-badge");
+    const n = unreadCounts[c] || 0;
+    if (n > 0) {
+      if (!badge) { badge = document.createElement("span"); badge.className = "unread-badge"; d.appendChild(badge); }
+      badge.textContent = n;
+    } else if (badge) badge.remove();
+  }
+  // Agent rows: unread in their thought or DM channel
+  for (const d of document.querySelectorAll("#agents .agent-row")) {
+    const agent = d._agent;
+    if (!agent) continue;
+    const n = (unreadCounts[thoughtChannelFor(agent)] || 0) + (unreadCounts[dmChannelFor(agent)] || 0);
+    let badge = d.querySelector(".unread-badge");
+    if (n > 0) {
+      if (!badge) { badge = document.createElement("span"); badge.className = "unread-badge"; d.appendChild(badge); }
+      badge.textContent = n;
+    } else if (badge) badge.remove();
+  }
+}
+
+function clearUnreadForView() {
+  if (view.type === "channel") {
+    delete unreadCounts[view.name];
+  } else if (view.type === "thoughts") {
+    delete unreadCounts[thoughtChannelFor(view.agent)];
+    delete unreadCounts[dmChannelFor(view.agent)];
+  }
+  lastRead[view.type === "channel" ? view.name : view.agent] = Date.now()/1000;
+  saveLastRead();
+  updateUnreadBadges();
+}
+
 async function loadChannels() {
   const {channels} = await api("/api/channels");
   const box = $("#channels"); box.innerHTML = "";
@@ -290,10 +349,12 @@ async function loadChannels() {
   for (const c of all) {
     const d = document.createElement("div");
     d.className = "chan" + (view.type === "channel" && c === view.name ? " active" : "");
+    d._chan = c;
     d.innerHTML = `<span class="hash">#</span>${esc(c.replace(/^#/,""))}`;
     d.onclick = () => switchChannel(c);
     box.appendChild(d);
   }
+  updateUnreadBadges();
 }
 
 async function loadAgents() {
@@ -304,13 +365,15 @@ async function loadAgents() {
     d.className = "agent" + (view.type === "thoughts" && view.agent === a.name ? " active" : "");
     d.dataset.name = a.name;
     const seedMark = a.seed ? "🌱 " : "";
-    const dotCls = a.presence === "offline" ? "offline" : (a.presence === "working" ? "working" : "online");
+    const dotCls = a.thinking ? "thinking" : (a.presence === "offline" ? "offline" : (a.presence === "working" ? "working" : "online"));
     const modelShort = (a.model || "").replace(/^anthropic:/, "").replace(/^claude-/, "") || "default";
+    d._agent = a.name;
     d.innerHTML = `<span class="dot ${dotCls}"></span>${seedMark}${esc(a.name)}<span class="role">${esc(a.presence)} · ${esc(modelShort)}</span>`;
     d.onclick = () => openThoughts(a.name);
     box.appendChild(d);
   }
   if (!agents.length) box.innerHTML = `<div class="sys">no agents yet</div>`;
+  updateUnreadBadges();
 }
 
 function closeSockets() {
@@ -323,6 +386,7 @@ function closeSockets() {
 function switchChannel(c) {
   closeSockets();
   view = {type: "channel", name: c};
+  clearUnreadForView();
   loadChanSubs(c);
   $("#chan-name").textContent = c;
   $("#view-tag").style.display = "none";
@@ -367,6 +431,7 @@ async function openThoughts(agent) {
     .sort((a, b) => a[0].ts - b[0].ts)
     .forEach(([m, kind]) => addMsg(m, kind));
   $("#messages").scrollTop = $("#messages").scrollHeight;
+  clearUnreadForView();
   connectThoughts(tCh, dCh, seq);
 }
 
@@ -388,6 +453,17 @@ function channelSocket(channel, kind, seq, onLive) {
     if (seq !== viewSeq) { console.debug("[ws] stale msg dropped", channel, "seq", seq, "viewSeq", viewSeq); return; }
     const p = JSON.parse(ev.data);
     console.debug("[ws] recv", channel, p.type || "msg", (p.text||"").slice(0,40));
+    // Unread: message for a channel we're not viewing
+    if (!p.type && p.ts) {
+      const viewing = (view.type === "channel" && view.name === channel) ||
+        (view.type === "thoughts" && (thoughtChannelFor(view.agent) === channel || dmChannelFor(view.agent) === channel));
+      if (!viewing) {
+        unreadCounts[channel] = (unreadCounts[channel] || 0) + 1;
+        updateUnreadBadges();
+      } else {
+        lastRead[channel] = Date.now()/1000; saveLastRead();
+      }
+    }
     if (p.type === "history") { p.messages.forEach(m => addMsg(m, kind)); $("#messages").scrollTop = $("#messages").scrollHeight; }
     else if (p.ts) {
       if (p.cid && pendingCid.has(p.cid)) {
