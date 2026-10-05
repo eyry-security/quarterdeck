@@ -112,6 +112,10 @@ def build_parser() -> argparse.ArgumentParser:
     ingest = sub.add_parser("ingest-aplomado", help="persist and route Aplomado event JSONL")
     ingest.add_argument("--file", required=True, help="event JSONL path, or '-' for stdin")
     ingest.add_argument("--allow-local", action="store_true")
+
+    serve = sub.add_parser("serve", help="run the webchat server (KiwiIRC-style agent room)")
+    serve.add_argument("--port", type=int, default=8420)
+    serve.add_argument("--host", default="127.0.0.1")
     return parser
 
 
@@ -327,6 +331,14 @@ def cmd_ingest_aplomado(args) -> int:
     return 1 if failed else 0
 
 
+def cmd_serve(args) -> int:
+    """Run the webchat server."""
+    from .web import create_app
+    import uvicorn
+    uvicorn.run(create_app(), host=args.host, port=args.port)
+    return 0
+
+
 _DISPATCH = {
     "spawn": cmd_spawn,
     "list": cmd_list,
@@ -340,6 +352,7 @@ _DISPATCH = {
     "rule-list": cmd_rule_list,
     "rule-remove": cmd_rule_remove,
     "ingest-aplomado": cmd_ingest_aplomado,
+    "serve": cmd_serve,
 }
 
 
