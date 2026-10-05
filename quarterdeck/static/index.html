@@ -80,6 +80,7 @@ header .sub { color: var(--muted); font-size: 13px; }
   border: 1px solid var(--green); border-radius: 4px; padding: 2px 6px;
 }
 #live-badge.off { color: var(--red); border-color: var(--red); }
+.agent .dot.offline { background: var(--red); box-shadow: none; }
 #messages {
   flex: 1; overflow-y: auto; padding: 12px 16px;
   display: flex; flex-direction: column; gap: 2px;
@@ -137,6 +138,7 @@ header .sub { color: var(--muted); font-size: 13px; }
   color: var(--text); font-family: var(--mono); font-size: 12px; resize: vertical;
 }
 #agent-panel .row { display: flex; gap: 8px; margin-top: 8px; }
+#thought-input-row { display: none; }
 #thought-stream { display: none; height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; background: rgba(0,0,0,0.2); }
 #thought-stream .thought { font-style: italic; opacity: 0.75; margin-bottom: 6px; font-size: 13px; line-height: 1.4; }
 #thought-stream .thought .ts { opacity: 0.5; font-size: 11px; margin-right: 6px; font-style: normal; }
@@ -183,7 +185,7 @@ header .sub { color: var(--muted); font-size: 13px; }
     </div>
     <textarea id="panel-text" placeholder="No file yet — write the agent's memory here."></textarea>
     <div id="thought-stream"></div>
-    <div id="thought-input-row" style="display:none; gap:8px; margin-bottom:8px;">
+    <div id="thought-input-row" style="gap:8px; margin-bottom:8px;">
       <input id="thought-input" placeholder="Message this agent directly…" style="flex:1;">
       <button id="thought-send">Send</button>
     </div>
@@ -241,7 +243,9 @@ async function loadAgents() {
   for (const a of agents) {
     const d = document.createElement("div");
     d.className = "agent";
-    d.innerHTML = `<span class="dot ${a.presence === "working" ? "working" : "online"}"></span>${esc(a.name)}<span class="role">${esc(a.presence)}</span>`;
+    const seedMark = a.seed ? "🌱 " : "";
+    const dotCls = a.presence === "offline" ? "offline" : (a.presence === "working" ? "working" : "online");
+    d.innerHTML = `<span class="dot ${dotCls}"></span>${seedMark}${esc(a.name)}<span class="role">${esc(a.presence)}</span>`;
     d.onclick = () => openPanel(a.name);
     box.appendChild(d);
   }
@@ -263,7 +267,14 @@ function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws/${encodeURIComponent(current)}`);
   ws.onopen = () => setLive(true);
-  ws.onclose = () => { setLive(false); setTimeout(connect, 3000); };
+  ws.onclose = async () => {
+    // WS dropped — check REST before crying offline (tunnel hiccups happen).
+    try {
+      const r = await fetch("/api/channels");
+      if (r.ok) { setLive(true); setTimeout(connect, 3000); return; }
+    } catch {}
+    setLive(false); setTimeout(connect, 3000);
+  };
   ws.onmessage = ev => {
     const p = JSON.parse(ev.data);
     if (p.type === "history") { p.messages.forEach(addMsg); $("#messages").scrollTop = $("#messages").scrollHeight; }
@@ -293,15 +304,23 @@ async function send() {
 }
 
 let thoughtWs = null;
+let thoughtWsIntentional = false;
+let thoughtRetry = null;
+let thoughtRetryDelay = 2000;
 async function openThoughts(name) {
   panelAgent = name;
+  $("#panel-title").textContent = name;
   document.querySelectorAll(".file-tabs button").forEach(b => b.classList.toggle("active", b.dataset.f === "__thoughts__"));
   document.getElementById("agent-panel").classList.add("thoughts-mode");
   const stream = document.getElementById("thought-stream");
   stream.innerHTML = '<div class="thought"><span class="ts">…</span>connecting to thought stream…</div>';
-  if (thoughtWs) thoughtWs.close();
+  if (thoughtWs) { thoughtWsIntentional = true; thoughtWs.close(); }
+  thoughtWsIntentional = false;
+  clearTimeout(thoughtRetry);
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  thoughtWs = new WebSocket(`${proto}://${location.host}/ws/thoughts/${encodeURIComponent(name)}`);
+  const url = `${proto}://${location.host}/ws/thoughts/${encodeURIComponent(name)}`;
+  thoughtWs = new WebSocket(url);
+  thoughtWs.onopen = () => { thoughtRetryDelay = 2000; };
   thoughtWs.onmessage = ev => {
     const p = JSON.parse(ev.data);
     if (p.type === "history") {
@@ -310,8 +329,16 @@ async function openThoughts(name) {
       stream.scrollTop = stream.scrollHeight;
     } else if (p.ts) addThought(p);
   };
+  thoughtWs.onerror = () => { try { thoughtWs.close(); } catch {} };
   thoughtWs.onclose = () => {
-    stream.innerHTML += '<div class="thought"><span class="ts">!</span>stream closed</div>';
+    if (thoughtWsIntentional) return;
+    // Unexpected drop — retry with backoff while the panel is open.
+    stream.innerHTML += '<div class="thought"><span class="ts">!</span>stream dropped — reconnecting…</div>';
+    thoughtRetryDelay = Math.min(thoughtRetryDelay * 2, 30000);
+    thoughtRetry = setTimeout(() => {
+      if (document.getElementById("agent-panel").classList.contains("thoughts-mode")
+          && panelAgent === name) openThoughts(name);
+    }, thoughtRetryDelay);
   };
 }
 function addThought(t) {
@@ -339,7 +366,8 @@ document.getElementById("thought-input").addEventListener("keydown", e => {
   if (e.key === "Enter") sendThoughtDM();
 });
 function closeThoughts() {
-  if (thoughtWs) { thoughtWs.close(); thoughtWs = null; }
+  clearTimeout(thoughtRetry);
+  if (thoughtWs) { thoughtWsIntentional = true; thoughtWs.close(); thoughtWs = null; }
   document.getElementById("agent-panel").classList.remove("thoughts-mode");
 }
 async function openPanel(name) {
