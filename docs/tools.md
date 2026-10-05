@@ -46,3 +46,12 @@ Example — compacting your own memory:
 2. (you summarize: keep learnings, drop chit-chat)
 3. quarterdeck_rewrite_memory("...compacted text...")
 ```
+
+### `quarterdeck_reset_env()`
+Reset your own sandbox environment: wipes `/work`, rebuilds the container
+from the clean `qd-agent:latest` image. Memory, runbook, and identity are
+untouched — only scratch space is cleaned. Use when you want a fresh start.
+
+### `quarterdeck_reset_agent_env(agent)` (seed only)
+Reset another agent's sandbox environment. Same wipe-and-rebuild, for the
+named agent. Cannot target seed itself.

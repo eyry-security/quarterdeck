@@ -23,6 +23,7 @@ from .agent_files import AGENT_FILES, AgentFiles
 from .agent_registry import AgentRegistry, RegistryError
 from .chat import Chat, add_post_listener, sanitize_channel
 from .thoughts import mount_thought_routes
+from .users import UserError, UserRegistry
 from .events import EventBus
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -81,6 +82,15 @@ class CreditBalance(BaseModel):
     balance_usd: float | None = None
 
 
+class RegisterUser(BaseModel):
+    username: str
+    note: str = ""
+
+
+class UpdateUserNote(BaseModel):
+    note: str = ""
+
+
 def _swallow_future(fut) -> None:
     try:
         fut.result()
@@ -101,6 +111,7 @@ class Room:
         self.bus = EventBus()
         self.chat = Chat(home=home, bus=self.bus)
         self.registry = AgentRegistry(home=home)
+        self.users = UserRegistry(home=home)
         self.files = AgentFiles(home=home)
         self.daemon = daemon
         self._subs: dict[str, set[WebSocket]] = {}
@@ -214,6 +225,10 @@ def create_app(home: Path | None = None, daemon=None) -> FastAPI:
     @app.post("/api/channels/{channel}/messages")
     async def post_message(channel: str, body: PostMessage):
         try:
+            room.users.ensure(body.author)
+        except UserError as e:
+            raise HTTPException(400, str(e))
+        try:
             msg = room.post(channel, body.author, body.text, cid=body.cid)
         except ValueError as e:
             raise HTTPException(400, str(e))
@@ -225,11 +240,43 @@ def create_app(home: Path | None = None, daemon=None) -> FastAPI:
 
     @app.post("/api/dm")
     async def send_dm(body: DM):
+        try:
+            room.users.ensure(body.sender)
+        except UserError as e:
+            raise HTTPException(400, str(e))
         channel = dm_channel(body.sender, body.recipient)
         msg = room.post(channel, body.sender, f"(dm) {body.text}", cid=body.cid)
         # A DM always wakes the recipient agent immediately — no @mention needed.
         room.wake_agent(body.recipient, "dm")
         return {"channel": channel, "message": msg}
+
+    @app.post("/api/users/register")
+    def register_user(body: RegisterUser):
+        """Explicit registration: pick a unique username."""
+        try:
+            profile = room.users.register(body.username, note=body.note)
+        except UserError as e:
+            raise HTTPException(409, str(e))
+        return profile.to_dict()
+
+    @app.get("/api/users")
+    def list_users():
+        return {"users": [u.to_dict() for u in room.users.list()]}
+
+    @app.get("/api/users/{username}")
+    def get_user(username: str):
+        profile = room.users.get(username)
+        if profile is None:
+            raise HTTPException(404, "unknown user")
+        return profile.to_dict()
+
+    @app.put("/api/users/{username}/note")
+    def update_user_note(username: str, body: UpdateUserNote):
+        try:
+            profile = room.users.update_note(username, body.note)
+        except UserError as e:
+            raise HTTPException(404, str(e))
+        return profile.to_dict()
 
     @app.get("/api/agents")
     def list_agents():
@@ -333,6 +380,28 @@ def create_app(home: Path | None = None, daemon=None) -> FastAPI:
         if result.get("status") == "not-running":
             raise HTTPException(404, f"no running agent named {name!r}")
         return result
+
+    @app.post("/api/agents/{name}/reset-env")
+    async def reset_agent_env(name: str):
+        """Wipe an agent's /work and rebuild their sandbox from the clean image."""
+        d = room.daemon
+        if d is None:
+            raise HTTPException(500, "agent daemon not running")
+        key = (name or "").strip()
+        runner = d.runners.get(key)
+        if runner is None:
+            lowered = key.lower()
+            for k, r in d.runners.items():
+                if k.lower() == lowered:
+                    runner = r
+                    break
+        if runner is None:
+            raise HTTPException(404, f"no running agent named {name!r}")
+        try:
+            result = await asyncio.to_thread(runner.reset_environment)
+        except Exception as e:
+            raise HTTPException(500, f"reset failed: {e}")
+        return {"agent": name, "result": result}
 
     @app.post("/api/agents")
     def create_agent(body: CreateAgent):

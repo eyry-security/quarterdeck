@@ -69,6 +69,7 @@ class AgentRunner:
         self._pending_obs: list[dict] = []
         self._pinnace = None
         self._pinnace_model: str | None = None
+        self._sandbox = None  # PersistentDockerSandbox, built lazily
         self._last_proactive = 0.0
         self._dir = self.home / "agents" / _safe(self.name)
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -359,6 +360,30 @@ class AgentRunner:
         except Exception:
             return None
 
+    def sandbox(self):
+        """This agent's persistent sandbox (host-mounted /work). Built lazily."""
+        if self._sandbox is None:
+            from .persistent_sandbox import PersistentDockerSandbox
+            try:
+                self._sandbox = PersistentDockerSandbox(self.name, home=self.home)
+            except Exception:
+                # Docker unavailable (tests, dev boxes): fall back so the
+                # agent still runs.
+                from pinnace.sandbox import DockerSandbox, SandboxError
+                try:
+                    self._sandbox = DockerSandbox()
+                except SandboxError:
+                    from pinnace.sandbox import LocalSandbox
+                    self._sandbox = LocalSandbox(unsafe_ok=True)
+        return self._sandbox
+
+    def reset_environment(self) -> str:
+        """Wipe /work and rebuild the sandbox from the clean image."""
+        sb = self.sandbox()
+        if hasattr(sb, "reset"):
+            return sb.reset()
+        return "sandbox does not support reset (not a PersistentDockerSandbox)"
+
     def build_pinnace(self):
         """Construct the Pinnace agent (lazy; defensive about signature drift).
 
@@ -373,6 +398,7 @@ class AgentRunner:
 
         kwargs: dict = {
             "tools": self.all_tools(),
+            "sandbox": self.sandbox(),
             "system_prompt": self._system_prompt(),
             "model": model,
             "log": thought_stream_log(self.name, home=self.home),

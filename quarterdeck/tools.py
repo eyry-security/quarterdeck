@@ -184,6 +184,48 @@ def quarterdeck_tools(agent_name: str, home: Path | None = None,
             return f"error: {e}"
 
     # --- quarterdeck_deregister_agent (seed only) ---
+    def qd_reset_env() -> str:
+        """Reset your sandbox environment: wipes /work and rebuilds the container from the clean image. Use when you want a fresh start."""
+        d = daemon
+        if d is None:
+            return "error: daemon not available (reset needs the agent runner)"
+        runner = d.runners.get(me.strip().lower())
+        if runner is None:
+            # Try any key variant
+            for k, r in d.runners.items():
+                if k.lower() == me.strip().lower():
+                    runner = r
+                    break
+        if runner is None:
+            return "error: no live runner for you right now"
+        try:
+            return runner.reset_environment()
+        except Exception as e:
+            return f"error: reset failed: {e}"
+
+    def qd_reset_agent_env(name: str) -> str:
+        """Reset another agent's sandbox environment (seed only). Wipes their /work, rebuilds from the clean image. Args: name."""
+        target = (name or "").strip().lower()
+        if not target:
+            return "error: agent name required"
+        if target == "seed":
+            return "error: cannot reset the seed's own environment this way"
+        d = daemon
+        if d is None:
+            return "error: daemon not available"
+        runner = d.runners.get(target)
+        if runner is None:
+            for k, r in d.runners.items():
+                if k.lower() == target:
+                    runner = r
+                    break
+        if runner is None:
+            return f"error: no live runner for {name}"
+        try:
+            return f"{name}: {runner.reset_environment()}"
+        except Exception as e:
+            return f"error: reset failed: {e}"
+
     def qd_deregister_agent(name: str) -> str:
         """Deregister an agent: stops its loop, retires it, archives files."""
         target = (name or "").strip()
@@ -261,6 +303,11 @@ def quarterdeck_tools(agent_name: str, home: Path | None = None,
             "Change your own model (e.g. switch to haiku for cheap work, opus for hard tasks). Args: model (e.g. 'anthropic:claude-haiku-4-5', or empty to reset to default). Takes effect on your next turn.",
             qd_set_model,
         ),
+        _make_tool(
+            "quarterdeck_reset_env",
+            "Reset your sandbox environment: wipes /work and rebuilds the container from the clean image. Use for a fresh start.",
+            qd_reset_env,
+        ),
     ]
     # Seed-only: manage other agents' models.
     if me.strip().lower() == "seed":
@@ -269,6 +316,13 @@ def quarterdeck_tools(agent_name: str, home: Path | None = None,
                 "quarterdeck_set_agent_model",
                 "Change another agent's model. Args: agent (name), model (e.g. 'anthropic:claude-haiku-4-5', or empty for default).",
                 qd_set_agent_model,
+            )
+        )
+        tools.append(
+            _make_tool(
+                "quarterdeck_reset_agent_env",
+                "Reset another agent's sandbox environment (seed only): wipes their /work, rebuilds from the clean image. Args: name.",
+                qd_reset_agent_env,
             )
         )
         tools.append(
