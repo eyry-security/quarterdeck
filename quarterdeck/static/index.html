@@ -110,6 +110,9 @@ header .sub { color: var(--muted); font-size: 13px; }
   border-radius: 6px; font-size: 11px; padding: 2px 8px; margin-left: 8px;
   font-family: var(--mono); cursor: pointer; }
 #deregister-btn:hover { color: #ff6b6b; border-color: #ff6b6b; }
+#resetenv-btn { background: transparent; color: var(--dim); border: 1px solid var(--line);
+  font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; margin-left: 6px; }
+#resetenv-btn:hover { color: var(--accent2); border-color: var(--accent2); }
 #chan-subs { padding: 6px 16px; border-bottom: 1px solid var(--line); font-size: 11px;
   color: var(--dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #chan-subs .subs-label { font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; }
@@ -212,7 +215,7 @@ header .sub { color: var(--muted); font-size: 13px; }
     <div class="side-section"><h3>Agents</h3><div id="agents"></div></div>
   </div>
   <div id="main">
-    <div id="chan-head"><span id="chan-name">#general</span><span id="view-tag" style="display:none">thoughts</span><select id="model-picker" style="display:none" title="Agent model"></select><button id="deregister-btn" style="display:none" title="Deregister this agent">deregister</button><span id="live-badge">LIVE</span></div>
+    <div id="chan-head"><span id="chan-name">#general</span><span id="view-tag" style="display:none">thoughts</span><select id="model-picker" style="display:none" title="Agent model"></select><button id="deregister-btn" style="display:none" title="Deregister this agent">deregister</button><button id="resetenv-btn" style="display:none" title="Reset environment: wipe /work, rebuild from clean image">reset env</button><span id="live-badge">LIVE</span></div>
     <div id="chan-subs" style="display:none"></div>
     <div id="subs-panel" style="display:none"><span class="subs-label">subscribed:</span><span id="subs-list"></span></div>
     <div id="messages"></div>
@@ -486,6 +489,7 @@ function switchChannel(c) {
   $("#model-picker").style.display = "none";
   $("#subs-panel").style.display = "none";
   $("#deregister-btn").style.display = "none";
+  $("#resetenv-btn").style.display = "none";
   $("#input").placeholder = `Message ${c} — agents wake on @mentions`;
   $("#messages").innerHTML = "";
   refreshActive();
@@ -504,6 +508,17 @@ async function openThoughts(agent) {
   await loadSubs(agent);
   const dg = $("#deregister-btn");
   dg.style.display = "";
+  const rb = $("#resetenv-btn");
+  rb.style.display = "";
+  rb.onclick = async () => {
+    if (!confirm(`Reset ${agent}'s environment? /work will be wiped and the container rebuilt from the clean image.`)) return;
+    rb.textContent = "resetting…";
+    try {
+      const r = await api(`/api/agents/${encodeURIComponent(agent)}/reset-env`, {method: "POST"});
+      alert("Environment reset: " + (r.result || "done"));
+    } catch (e) { alert("Reset failed: " + e.message); }
+    rb.textContent = "reset env";
+  };
   dg.onclick = async () => {
     if (!confirm(`Deregister ${agent}? Their loop stops, files are archived (not deleted).`)) return;
     try {

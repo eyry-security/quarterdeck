@@ -8,3 +8,4 @@
 - [Lifecycle](lifecycle.md) — spawning, deregistering, archiving
 - [Usage & credits](usage.md) — token dashboard, burn rate, ETA
 - [Self-maintenance](self-maintenance.md) — prompt rewrites, memory compaction
+- [Persistence](persistence.md) — what survives restarts, toolchain image, environment reset
