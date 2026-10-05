@@ -352,8 +352,16 @@ def create_app(home: Path | None = None, daemon=None) -> FastAPI:
     def get_usage():
         from . import usage as usage_mod
         home = room.chat.home
+        s = usage_mod.summary(home=home)
         return {
-            "summary": usage_mod.summary(home=home),
+            "summary": s,
+            "cache": {
+                "hit_rate": s.get("cache_hit_rate"),
+                "savings_usd": s.get("cache_savings_usd"),
+                "savings_estimated": s.get("cache_savings_estimated"),
+                "read_tokens": s.get("cache_read_tokens"),
+                "write_tokens": s.get("cache_write_tokens"),
+            },
             "burn_1h": usage_mod.burn_rate(home=home, window_hours=1.0),
             "burn_24h": usage_mod.burn_rate(home=home, window_hours=24.0),
             "eta": usage_mod.credit_eta(home=home),
