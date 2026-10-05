@@ -58,10 +58,12 @@ header .sub { color: var(--muted); font-size: 13px; }
 }
 .chan:hover, .agent:hover { background: var(--surface-2); }
 .chan.active { background: var(--surface-2); border-left: 3px solid var(--accent1); }
+.agent.active { background: var(--surface-2); border-left: 3px solid var(--accent2); }
 .chan .hash { color: var(--muted); font-family: var(--mono); }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
 .dot.working { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+.agent .dot.offline { background: var(--red); box-shadow: none; }
 .agent .role { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono); }
 #add-chan {
   margin: 8px 12px; padding: 6px 10px; border-radius: 8px;
@@ -75,12 +77,16 @@ header .sub { color: var(--muted); font-size: 13px; }
   font-family: var(--mono); font-size: 15px; font-weight: 600;
   display: flex; align-items: center; gap: 10px;
 }
+#view-tag {
+  font-size: 11px; font-family: var(--mono); font-weight: 400;
+  color: var(--muted); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 6px;
+}
 #live-badge {
   font-size: 11px; font-family: var(--mono); color: var(--green);
   border: 1px solid var(--green); border-radius: 4px; padding: 2px 6px;
 }
 #live-badge.off { color: var(--red); border-color: var(--red); }
-.agent .dot.offline { background: var(--red); box-shadow: none; }
 #messages {
   flex: 1; overflow-y: auto; padding: 12px 16px;
   display: flex; flex-direction: column; gap: 2px;
@@ -97,6 +103,16 @@ header .sub { color: var(--muted); font-size: 13px; }
   font-family: var(--mono); background: var(--surface-2);
   padding: 1px 5px; border-radius: 4px; font-size: 13px;
 }
+/* Thinking: faint internal monologue. Posts: solid external messages. */
+.msg.thought {
+  font-style: italic;
+  opacity: 0.68;
+  border-left: 2px solid rgba(155, 92, 255, 0.45);
+  padding-left: 10px;
+  margin-left: 2px;
+}
+.msg.thought:hover { background: var(--surface); opacity: 0.92; }
+.msg.thought .ts { font-style: normal; }
 #composer {
   display: flex; gap: 8px; padding: 10px 16px;
   border-top: 1px solid var(--border); background: var(--surface);
@@ -118,39 +134,6 @@ header .sub { color: var(--muted); font-size: 13px; }
   color: #fff; font-weight: 600; font-size: 14px;
 }
 #send:hover { filter: brightness(1.1); }
-#agent-panel {
-  width: 300px; min-width: 300px; background: var(--surface);
-  border-left: 1px solid var(--border); padding: 12px;
-  overflow-y: auto; display: none;
-}
-#agent-panel.open { display: block; }
-#agent-panel h3 { font-size: 14px; margin-bottom: 8px; font-family: var(--mono); }
-#agent-panel .file-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
-#agent-panel .file-tabs button {
-  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
-  background: var(--surface-2); color: var(--muted); cursor: pointer;
-  font-size: 12px; font-family: var(--mono);
-}
-#agent-panel .file-tabs button.active { color: var(--text); border-color: var(--accent1); }
-#agent-panel textarea {
-  width: 100%; height: 300px; padding: 8px; border-radius: 8px;
-  border: 1px solid var(--border); background: var(--bg);
-  color: var(--text); font-family: var(--mono); font-size: 12px; resize: vertical;
-}
-#agent-panel .row { display: flex; gap: 8px; margin-top: 8px; }
-#thought-input-row { display: none; }
-#thought-stream { display: none; height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; background: rgba(0,0,0,0.2); }
-#thought-stream .thought { font-style: italic; opacity: 0.75; margin-bottom: 6px; font-size: 13px; line-height: 1.4; }
-#thought-stream .thought .ts { opacity: 0.5; font-size: 11px; margin-right: 6px; font-style: normal; }
-#agent-panel.thoughts-mode #panel-text, #agent-panel.thoughts-mode #panel-save { display: none; }
-#agent-panel.thoughts-mode #thought-stream { display: block; }
-#agent-panel.thoughts-mode #thought-input-row { display: flex; }
-#agent-panel .row button {
-  flex: 1; padding: 6px; border-radius: 6px; border: none; cursor: pointer;
-  background: linear-gradient(90deg, var(--accent1), var(--accent2));
-  color: #fff; font-size: 13px; font-weight: 600;
-}
-#agent-panel .close { float: right; cursor: pointer; color: var(--muted); }
 .sys { color: var(--muted); font-style: italic; font-size: 13px; text-align: center; padding: 4px; }
 </style>
 </head>
@@ -166,7 +149,7 @@ header .sub { color: var(--muted); font-size: 13px; }
     <div class="side-section"><h3>Agents</h3><div id="agents"></div></div>
   </div>
   <div id="main">
-    <div id="chan-head"><span id="chan-name">#general</span><span id="live-badge">LIVE</span></div>
+    <div id="chan-head"><span id="chan-name">#general</span><span id="view-tag" style="display:none">thoughts</span><span id="live-badge">LIVE</span></div>
     <div id="messages"></div>
     <div id="composer">
       <input id="nick" placeholder="nick" value="human">
@@ -174,42 +157,46 @@ header .sub { color: var(--muted); font-size: 13px; }
       <button id="send">Send</button>
     </div>
   </div>
-  <div id="agent-panel">
-    <span class="close" id="panel-close">✕</span>
-    <h3 id="panel-title">agent</h3>
-    <div class="file-tabs">
-      <button data-f="memory.md" class="active">memory.md</button>
-      <button data-f="runbook.md">runbook.md</button>
-      <button data-f="identify.md">identify.md</button>
-      <button data-f="__thoughts__" id="thoughts-tab">💭 thoughts</button>
-    </div>
-    <textarea id="panel-text" placeholder="No file yet — write the agent's memory here."></textarea>
-    <div id="thought-stream"></div>
-    <div id="thought-input-row" style="gap:8px; margin-bottom:8px;">
-      <input id="thought-input" placeholder="Message this agent directly…" style="flex:1;">
-      <button id="thought-send">Send</button>
-    </div>
-    <div class="row"><button id="panel-save">Save</button><button id="panel-dm">DM</button></div>
-  </div>
 </div>
 <script>
 const $ = s => document.querySelector(s);
-let current = "#general", ws = null, panelAgent = null, panelFile = "memory.md";
-const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+// View: {type:"channel", name:"#general"} or {type:"thoughts", agent:"scout"}
+let view = {type: "channel", name: "#general"};
+let viewSeq = 0;
+let ws = null, dmWs = null;
+const sentIds = new Set();
+const renderedIds = new Set();
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const fmtTs = ts => new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
 const isAgent = a => a !== "human" && !a.startsWith("guest");
+const nick = () => $("#nick").value.trim() || "human";
+const msgId = m => m.ts + "|" + m.author + "|" + m.text;
+// Deterministic DM channel, mirrors server dm_channel(): sorted pair.
+const dmChannelFor = agent => {
+  const pair = [nick().trim(), agent.trim()].sort();
+  return `#dm-${pair[0]}-${pair[1]}`;
+};
+const thoughtChannelFor = agent => `#thoughts-${agent}`;
 
-function renderMsg(m) {
+// kind: "msg" (normal), "dm" (DM, strip "(dm) " prefix), "thought" (internal monologue styling)
+function renderMsg(m, kind) {
+  kind = kind || "msg";
   const cls = isAgent(m.author) ? "agent" : "human";
   const div = document.createElement("div");
-  div.className = "msg";
-  div.innerHTML = `<div class="meta"><span class="author ${cls}">${esc(m.author)}</span><span class="ts">${fmtTs(m.ts)}</span></div><div class="text">${esc(m.text)}</div>`;
+  div.className = "msg" + (kind === "thought" ? " thought" : "");
+  let text = m.text;
+  if (kind === "dm" && typeof text === "string" && text.startsWith("(dm) ")) text = text.slice(5);
+  div.innerHTML = `<div class="meta"><span class="author ${cls}">${esc(m.author)}</span><span class="ts">${fmtTs(m.ts)}</span></div><div class="text">${esc(text)}</div>`;
   return div;
 }
-function addMsg(m) {
+function addMsg(m, kind) {
+  kind = kind || "msg";
+  const id = msgId(m);
+  if (renderedIds.has(id)) return;
+  renderedIds.add(id);
   const box = $("#messages");
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  box.appendChild(renderMsg(m));
+  box.appendChild(renderMsg(m, kind));
   if (nearBottom) box.scrollTop = box.scrollHeight;
 }
 function setLive(on) {
@@ -224,13 +211,25 @@ async function api(path, opts={}) {
   return r.json();
 }
 
+function refreshActive() {
+  document.querySelectorAll(".chan").forEach(e => {
+    const name = "#" + e.textContent.replace("#", "").trim();
+    e.classList.toggle("active", view.type === "channel" && name === view.name);
+  });
+  document.querySelectorAll(".agent").forEach(e => {
+    e.classList.toggle("active", view.type === "thoughts" && e.dataset.name === view.agent);
+  });
+}
+
 async function loadChannels() {
   const {channels} = await api("/api/channels");
   const box = $("#channels"); box.innerHTML = "";
-  const all = channels.length ? channels : ["#general"];
+  // Thought streams live under AGENTS now; keep the channel list clean.
+  const list = (channels || []).filter(c => !c.startsWith("#thoughts-"));
+  const all = list.length ? list : ["#general"];
   for (const c of all) {
     const d = document.createElement("div");
-    d.className = "chan" + (c === current ? " active" : "");
+    d.className = "chan" + (view.type === "channel" && c === view.name ? " active" : "");
     d.innerHTML = `<span class="hash">#</span>${esc(c.replace(/^#/,""))}`;
     d.onclick = () => switchChannel(c);
     box.appendChild(d);
@@ -242,169 +241,130 @@ async function loadAgents() {
   const box = $("#agents"); box.innerHTML = "";
   for (const a of agents) {
     const d = document.createElement("div");
-    d.className = "agent";
+    d.className = "agent" + (view.type === "thoughts" && view.agent === a.name ? " active" : "");
+    d.dataset.name = a.name;
     const seedMark = a.seed ? "🌱 " : "";
     const dotCls = a.presence === "offline" ? "offline" : (a.presence === "working" ? "working" : "online");
     d.innerHTML = `<span class="dot ${dotCls}"></span>${seedMark}${esc(a.name)}<span class="role">${esc(a.presence)}</span>`;
-    d.onclick = () => openPanel(a.name);
+    d.onclick = () => openThoughts(a.name);
     box.appendChild(d);
   }
   if (!agents.length) box.innerHTML = `<div class="sys">no agents yet</div>`;
 }
 
-function switchChannel(c) {
-  current = c;
-  $("#chan-name").textContent = c;
-  $("#input").placeholder = `Message ${c} — agents wake on @mentions`;
-  $("#messages").innerHTML = "";
-  document.querySelectorAll(".chan").forEach(e => e.classList.toggle("active", e.textContent.replace("#","") === c.replace("#","")));
-  connect();
+function closeSockets() {
+  viewSeq++;
+  for (const s of [ws, dmWs]) { try { s && s.close(); } catch {} }
+  ws = dmWs = null;
+  sentIds.clear(); renderedIds.clear();
 }
 
-const sentIds = new Set();
-function connect() {
-  if (ws) ws.close();
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/ws/${encodeURIComponent(current)}`);
-  ws.onopen = () => setLive(true);
-  ws.onclose = async () => {
+function switchChannel(c) {
+  closeSockets();
+  view = {type: "channel", name: c};
+  $("#chan-name").textContent = c;
+  $("#view-tag").style.display = "none";
+  $("#input").placeholder = `Message ${c} — agents wake on @mentions`;
+  $("#messages").innerHTML = "";
+  refreshActive();
+  connectChannel();
+}
+
+async function openThoughts(agent) {
+  closeSockets();
+  const seq = viewSeq;
+  view = {type: "thoughts", agent};
+  $("#chan-name").textContent = agent;
+  const vt = $("#view-tag"); vt.style.display = ""; vt.textContent = "thoughts";
+  $("#input").placeholder = `Message ${agent} directly…`;
+  $("#messages").innerHTML = "";
+  refreshActive();
+  // Merged history: internal monologue + DM conversation, chronological.
+  const tCh = thoughtChannelFor(agent), dCh = dmChannelFor(agent);
+  let thoughts = [], dms = [];
+  try { thoughts = (await api(`/api/channels/${encodeURIComponent(tCh)}/messages?limit=50`)).messages || []; } catch {}
+  try { dms = (await api(`/api/channels/${encodeURIComponent(dCh)}/messages?limit=50`)).messages || []; } catch {}
+  if (seq !== viewSeq) return;
+  [...thoughts.map(m => [m, "thought"]), ...dms.map(m => [m, "dm"])]
+    .sort((a, b) => a[0].ts - b[0].ts)
+    .forEach(([m, kind]) => addMsg(m, kind));
+  $("#messages").scrollTop = $("#messages").scrollHeight;
+  connectThoughts(tCh, dCh, seq);
+}
+
+const wsProto = () => location.protocol === "https:" ? "wss" : "ws";
+
+function channelSocket(channel, kind, seq, onLive) {
+  const s = new WebSocket(`${wsProto()}://${location.host}/ws/${encodeURIComponent(channel)}`);
+  s.onopen = () => setLive(true);
+  s.onclose = async () => {
+    if (seq !== viewSeq) return;
     // WS dropped — check REST before crying offline (tunnel hiccups happen).
     try {
       const r = await fetch("/api/channels");
-      if (r.ok) { setLive(true); setTimeout(connect, 3000); return; }
-    } catch {}
-    setLive(false); setTimeout(connect, 3000);
+      setLive(r.ok);
+    } catch { setLive(false); }
+    setTimeout(() => { if (seq === viewSeq) onLive(); }, 3000);
   };
-  ws.onmessage = ev => {
+  s.onmessage = ev => {
+    if (seq !== viewSeq) return;
     const p = JSON.parse(ev.data);
-    if (p.type === "history") { p.messages.forEach(addMsg); $("#messages").scrollTop = $("#messages").scrollHeight; }
+    if (p.type === "history") { p.messages.forEach(m => addMsg(m, kind)); $("#messages").scrollTop = $("#messages").scrollHeight; }
     else if (p.ts) {
-      const id = p.ts + "|" + p.author + "|" + p.text;
-      if (!sentIds.has(id)) addMsg(p);
+      const id = msgId(p);
+      if (!sentIds.has(id)) addMsg(p, kind);
       sentIds.delete(id);
     }
   };
+  return s;
+}
+
+function connectChannel() {
+  const seq = viewSeq;
+  const name = view.name;
+  const kind = name.startsWith("#dm-") ? "dm" : "msg";
+  ws = channelSocket(name, kind, seq, () => {
+    if (view.type === "channel" && view.name === name) connectChannel();
+  });
+}
+
+function connectThoughts(tCh, dCh, seq) {
+  const agent = view.agent;
+  ws = channelSocket(tCh, "thought", seq, () => {
+    if (view.type === "thoughts" && view.agent === agent) connectThoughts(tCh, dCh, viewSeq);
+  });
+  dmWs = channelSocket(dCh, "dm", seq, () => {
+    if (view.type === "thoughts" && view.agent === agent) connectThoughts(tCh, dCh, viewSeq);
+  });
 }
 
 async function send() {
-  const text = $("#input").value.trim(), author = $("#nick").value.trim() || "human";
+  const text = $("#input").value.trim(), author = nick();
   if (!text) return;
   $("#input").value = "";
-  // Optimistic render: show immediately, dedupe when broadcast arrives.
-  const optimistic = {ts: Date.now()/1000, author, text};
-  addMsg(optimistic);
-  sentIds.add(optimistic.ts + "|" + author + "|" + text);
-  if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({type: "post", author, text}));
+  if (view.type === "thoughts") {
+    // DM the agent directly; it lands in the deterministic DM channel.
+    const agent = view.agent;
+    const optimistic = {ts: Date.now()/1000, author, text};
+    addMsg(optimistic, "dm");
+    sentIds.add(optimistic.ts + "|" + author + "|" + "(dm) " + text);
+    await api("/api/dm", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({sender: author, recipient: agent, text})});
+    loadChannels(); // surface the DM channel in the sidebar
   } else {
-    await api(`/api/channels/${encodeURIComponent(current)}/messages`,
-      {method: "POST", headers: {"Content-Type": "application/json"},
-       body: JSON.stringify({author, text})});
+    // Optimistic render: show immediately, dedupe when broadcast arrives.
+    const optimistic = {ts: Date.now()/1000, author, text};
+    addMsg(optimistic, "msg");
+    sentIds.add(msgId(optimistic));
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({type: "post", author, text}));
+    } else {
+      await api(`/api/channels/${encodeURIComponent(view.name)}/messages`,
+        {method: "POST", headers: {"Content-Type": "application/json"},
+         body: JSON.stringify({author, text})});
+    }
   }
 }
-
-let thoughtWs = null;
-let thoughtWsIntentional = false;
-let thoughtRetry = null;
-let thoughtRetryDelay = 2000;
-async function openThoughts(name) {
-  panelAgent = name;
-  $("#panel-title").textContent = name;
-  document.querySelectorAll(".file-tabs button").forEach(b => b.classList.toggle("active", b.dataset.f === "__thoughts__"));
-  document.getElementById("agent-panel").classList.add("thoughts-mode");
-  const stream = document.getElementById("thought-stream");
-  stream.innerHTML = '<div class="thought"><span class="ts">…</span>connecting to thought stream…</div>';
-  if (thoughtWs) { thoughtWsIntentional = true; thoughtWs.close(); }
-  thoughtWsIntentional = false;
-  clearTimeout(thoughtRetry);
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  const url = `${proto}://${location.host}/ws/thoughts/${encodeURIComponent(name)}`;
-  thoughtWs = new WebSocket(url);
-  thoughtWs.onopen = () => { thoughtRetryDelay = 2000; };
-  thoughtWs.onmessage = ev => {
-    const p = JSON.parse(ev.data);
-    if (p.type === "history") {
-      stream.innerHTML = "";
-      p.messages.forEach(t => addThought(t));
-      stream.scrollTop = stream.scrollHeight;
-    } else if (p.ts) addThought(p);
-  };
-  thoughtWs.onerror = () => { try { thoughtWs.close(); } catch {} };
-  thoughtWs.onclose = () => {
-    if (thoughtWsIntentional) return;
-    // Unexpected drop — retry with backoff while the panel is open.
-    stream.innerHTML += '<div class="thought"><span class="ts">!</span>stream dropped — reconnecting…</div>';
-    thoughtRetryDelay = Math.min(thoughtRetryDelay * 2, 30000);
-    thoughtRetry = setTimeout(() => {
-      if (document.getElementById("agent-panel").classList.contains("thoughts-mode")
-          && panelAgent === name) openThoughts(name);
-    }, thoughtRetryDelay);
-  };
-}
-function addThought(t) {
-  const stream = document.getElementById("thought-stream");
-  const div = document.createElement("div");
-  div.className = "thought";
-  div.innerHTML = `<span class="ts">${fmtTs(t.ts)}</span>${esc(t.text)}`;
-  stream.appendChild(div);
-  stream.scrollTop = stream.scrollHeight;
-}
-async function sendThoughtDM() {
-  const input = document.getElementById("thought-input");
-  const text = input.value.trim();
-  if (!text || !panelAgent) return;
-  input.value = "";
-  const me = document.getElementById("nick").value.trim() || "human";
-  // Post as DM to the agent; it appears in the DM channel.
-  await api("/api/dm", {method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({sender: me, recipient: panelAgent, text})});
-  // Also show it in the thought stream as your message.
-  addThought({ts: Date.now()/1000, author: me, text: "(to " + panelAgent + ") " + text});
-}
-document.getElementById("thought-send").onclick = sendThoughtDM;
-document.getElementById("thought-input").addEventListener("keydown", e => {
-  if (e.key === "Enter") sendThoughtDM();
-});
-function closeThoughts() {
-  clearTimeout(thoughtRetry);
-  if (thoughtWs) { thoughtWsIntentional = true; thoughtWs.close(); thoughtWs = null; }
-  document.getElementById("agent-panel").classList.remove("thoughts-mode");
-}
-async function openPanel(name) {
-  closeThoughts();
-  panelAgent = name; panelFile = "memory.md";
-  $("#panel-title").textContent = name;
-  document.querySelectorAll(".file-tabs button").forEach(b => b.classList.toggle("active", b.dataset.f === "memory.md"));
-  await loadPanelFile();
-  $("#agent-panel").classList.add("open");
-}
-async function loadPanelFile() {
-  try {
-    const r = await api(`/api/agents/${encodeURIComponent(panelAgent)}/files/${panelFile}`);
-    $("#panel-text").value = r.content;
-  } catch { $("#panel-text").value = ""; }
-}
-$("#panel-close").onclick = () => { closeThoughts(); $("#agent-panel").classList.remove("open"); };
-document.querySelectorAll(".file-tabs button").forEach(b => b.onclick = async () => {
-  if (b.dataset.f === "__thoughts__") { openThoughts(panelAgent); return; }
-  closeThoughts();
-  document.getElementById("agent-panel").classList.remove("thoughts-mode");
-  panelFile = b.dataset.f;
-  document.querySelectorAll(".file-tabs button").forEach(x => x.classList.toggle("active", x === b));
-  await loadPanelFile();
-});
-$("#panel-save").onclick = async () => {
-  await api(`/api/agents/${encodeURIComponent(panelAgent)}/files/${panelFile}`,
-    {method: "PUT", headers: {"Content-Type": "application/json"},
-     body: JSON.stringify({content: $("#panel-text").value})});
-  $("#panel-save").textContent = "Saved ✓"; setTimeout(() => $("#panel-save").textContent = "Save", 1200);
-};
-$("#panel-dm").onclick = async () => {
-  const me = $("#nick").value.trim() || "human";
-  const {channel} = await api("/api/dm", {method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({sender: me, recipient: panelAgent, text: "hello"})});
-  await loadChannels(); switchChannel(channel);
-};
 
 $("#send").onclick = send;
 $("#input").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
@@ -416,7 +376,7 @@ $("#add-chan").onclick = async () => {
   await loadChannels(); switchChannel("#" + name.replace(/^#+/, ""));
 };
 
-(async () => { await loadChannels(); await loadAgents(); connect(); setInterval(loadAgents, 15000); })();
+(async () => { await loadChannels(); await loadAgents(); switchChannel("#general"); setInterval(loadAgents, 15000); })();
 </script>
 </body>
 </html>
