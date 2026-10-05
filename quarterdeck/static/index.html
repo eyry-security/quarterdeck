@@ -159,6 +159,18 @@ header .sub { color: var(--muted); font-size: 13px; }
 }
 .msg.thought:hover { background: var(--surface); opacity: 0.92; }
 .msg.thought .ts { font-style: normal; }
+/* Thoughts collapse by default: preview line + expand toggle. */
+.msg.thought .t-full { display: none; }
+.msg.thought.expanded .t-full { display: inline; }
+.msg.thought.expanded .t-preview { display: none; }
+.msg.thought .t-toggle {
+  background: none; border: none; cursor: pointer;
+  color: var(--accent2); font-size: 11px; font-style: normal;
+  padding: 2px 6px; margin-left: 6px; border-radius: 4px;
+  font-family: var(--mono); white-space: nowrap;
+}
+.msg.thought .t-toggle:hover { background: rgba(155, 92, 255, 0.15); }
+.msg.thought .t-text { cursor: pointer; }
 #composer {
   display: flex; gap: 8px; padding: 10px 16px;
   border-top: 1px solid var(--border); background: var(--surface);
@@ -239,6 +251,14 @@ const dmChannelFor = agent => {
 };
 const thoughtChannelFor = agent => `#thoughts-${agent}`;
 
+// Compact thought preview: first line, truncated. Returns {preview, expandable}.
+function thoughtPreview(t) {
+  const full = String(t == null ? "" : t);
+  const first = full.split("\n")[0];
+  const cut = first.length > 90 ? first.slice(0, 90) + "\u2026" : first;
+  return { full, preview: cut || "\u2026", expandable: full !== cut };
+}
+
 // kind: "msg" (normal), "dm" (DM, strip "(dm) " prefix), "thought" (internal monologue styling)
 function renderMsg(m, kind) {
   kind = kind || "msg";
@@ -255,6 +275,22 @@ function renderMsg(m, kind) {
   } catch {}
   let text = m.text;
   if (kind === "dm" && typeof text === "string" && text.startsWith("(dm) ")) text = text.slice(5);
+  if (kind === "thought") {
+    // Collapsed by default; click text or toggle to expand/collapse.
+    const tp = thoughtPreview(text);
+    div.classList.add("collapsed");
+    div.innerHTML = `<div class="meta"><span class="author ${cls}">${esc(m.author)}</span><span class="ts">${fmtTs(m.ts)}</span></div><div class="text t-text"><span class="t-preview">${esc(tp.preview)}</span><span class="t-full">${esc(tp.full)}</span>${tp.expandable ? '<button class="t-toggle" title="expand/collapse">\u25b8 show more</button>' : ""}</div>`;
+    if (tp.expandable) {
+      const toggle = () => {
+        const open = div.classList.toggle("expanded");
+        div.classList.toggle("collapsed", !open);
+        const b = div.querySelector(".t-toggle");
+        if (b) b.textContent = open ? "\u25be show less" : "\u25b8 show more";
+      };
+      div.querySelector(".t-text").addEventListener("click", toggle);
+    }
+    return div;
+  }
   div.innerHTML = `<div class="meta"><span class="author ${cls}">${esc(m.author)}</span><span class="ts">${fmtTs(m.ts)}</span></div><div class="text">${esc(text)}</div>`;
   return div;
 }
