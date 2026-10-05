@@ -161,7 +161,8 @@ header .sub { color: var(--muted); font-size: 13px; }
 .msg.thought .ts { font-style: normal; }
 /* Thoughts collapse by default: preview line + expand toggle. */
 .msg.thought .t-full { display: none; }
-.msg.thought.expanded .t-full { display: inline; }
+.msg.thought.expanded .t-full { display: block; }
+.msg.thought .t-sep { border-top: 1px dashed rgba(155, 92, 255, 0.25); margin: 6px 0; }
 .msg.thought.expanded .t-preview { display: none; }
 .msg.thought .t-toggle {
   background: none; border: none; cursor: pointer;
@@ -259,6 +260,59 @@ function thoughtPreview(t) {
   return { full, preview: cut || "\u2026", expandable: full !== cut };
 }
 
+// Toggle expand/collapse on a thought block (single thought or chain).
+function toggleThoughtBlock(div) {
+  const open = div.classList.toggle("expanded");
+  div.classList.toggle("collapsed", !open);
+  const b = div.querySelector(".t-toggle");
+  if (b) b.textContent = open ? "\u25be show less" : "\u25b8 show more";
+}
+
+// Full HTML for a chain of thoughts: segments joined by subtle dividers.
+function chainFullHtml(msgs) {
+  return msgs.map((m, i) =>
+    (i ? '<div class="t-sep"></div>' : "") +
+    `<div class="t-seg">${esc(String(m.text == null ? "" : m.text))}</div>`
+  ).join("");
+}
+
+// A chain of consecutive thoughts from the same agent, rendered as one
+// collapsible block. Preview shows the first line of the first thought.
+function renderThoughtChain(msgs) {
+  const first = msgs[0];
+  const cls = isAgent(first.author) ? "agent" : "human";
+  const div = document.createElement("div");
+  div.className = "msg thought chain collapsed";
+  div._chain = msgs.slice();
+  div._chainAuthor = first.author;
+  const tp = thoughtPreview(first.text);
+  const expandable = msgs.length > 1 || tp.expandable;
+  div.innerHTML = `<div class="meta"><span class="author ${cls}">${esc(first.author)}</span>` +
+    `<span class="ts">${fmtTs(first.ts)}</span></div>` +
+    `<div class="text t-text"><span class="t-preview">${esc(tp.preview)}</span>` +
+    `<div class="t-full">${chainFullHtml(msgs)}</div>` +
+    (expandable ? '<button class="t-toggle" title="expand/collapse">\u25b8 show more</button>' : "") +
+    "</div>";
+  div.querySelector(".t-text").addEventListener("click", () => toggleThoughtBlock(div));
+  return div;
+}
+
+// Append a thought to an existing chain block (live websocket path).
+// Returns the block element.
+function appendToThoughtChain(div, m) {
+  div._chain.push(m);
+  div.querySelector(".t-full").innerHTML = chainFullHtml(div._chain);
+  if (!div.querySelector(".t-toggle")) {
+    const b = document.createElement("button");
+    b.className = "t-toggle";
+    b.title = "expand/collapse";
+    b.textContent = div.classList.contains("expanded") ? "\u25be show less" : "\u25b8 show more";
+    div.querySelector(".t-text").appendChild(b);
+  }
+  return div;
+}
+
+
 // kind: "msg" (normal), "dm" (DM, strip "(dm) " prefix), "thought" (internal monologue styling)
 function renderMsg(m, kind) {
   kind = kind || "msg";
@@ -276,20 +330,10 @@ function renderMsg(m, kind) {
   let text = m.text;
   if (kind === "dm" && typeof text === "string" && text.startsWith("(dm) ")) text = text.slice(5);
   if (kind === "thought") {
-    // Collapsed by default; click text or toggle to expand/collapse.
-    const tp = thoughtPreview(text);
-    div.classList.add("collapsed");
-    div.innerHTML = `<div class="meta"><span class="author ${cls}">${esc(m.author)}</span><span class="ts">${fmtTs(m.ts)}</span></div><div class="text t-text"><span class="t-preview">${esc(tp.preview)}</span><span class="t-full">${esc(tp.full)}</span>${tp.expandable ? '<button class="t-toggle" title="expand/collapse">\u25b8 show more</button>' : ""}</div>`;
-    if (tp.expandable) {
-      const toggle = () => {
-        const open = div.classList.toggle("expanded");
-        div.classList.toggle("collapsed", !open);
-        const b = div.querySelector(".t-toggle");
-        if (b) b.textContent = open ? "\u25be show less" : "\u25b8 show more";
-      };
-      div.querySelector(".t-text").addEventListener("click", toggle);
-    }
-    return div;
+    // Consecutive thoughts chain into one collapsible block.
+    const el = renderThoughtChain([m]);
+    if (div.classList.contains("mention")) el.classList.add("mention");
+    return el;
   }
   div.innerHTML = `<div class="meta"><span class="author ${cls}">${esc(m.author)}</span><span class="ts">${fmtTs(m.ts)}</span></div><div class="text">${esc(text)}</div>`;
   return div;
@@ -301,8 +345,21 @@ function addMsg(m, kind) {
   renderedIds.add(id);
   const box = $("#messages");
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  const el = renderMsg(m, kind);
-  box.appendChild(el);
+  let el;
+  if (kind === "thought") {
+    // Chain consecutive thoughts from the same agent into one block.
+    const last = box.lastElementChild;
+    if (last && last.classList.contains("thought") && last.classList.contains("chain") &&
+        last._chainAuthor === m.author) {
+      el = appendToThoughtChain(last, m);
+    } else {
+      el = renderThoughtChain([m]);
+      box.appendChild(el);
+    }
+  } else {
+    el = renderMsg(m, kind);
+    box.appendChild(el);
+  }
   if (nearBottom) box.scrollTop = box.scrollHeight;
   return el;
 }
