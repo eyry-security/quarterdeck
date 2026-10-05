@@ -67,6 +67,17 @@ class Daemon:
     async def run(self) -> None:
         """Boot in order, then supervise forever."""
         print("[daemon] booting: seed -> orchestrator -> agents", flush=True)
+        # 0. Specials visible in the registry (seed gets its 🌱 badge in the UI).
+        for special, prompt in (
+            ("seed", "Genesis agent: keeps the Quarterdeck room alive."),
+            ("orchestrator", "Writes tailored wakeup prompts for agents."),
+        ):
+            try:
+                if not self.registry.exists(special):
+                    self.registry.spawn(special, system_prompt=prompt,
+                                        sandbox="local", max_turns=10)
+            except Exception as e:
+                print(f"[daemon] registry ensure {special}: {e}", flush=True)
         # 1. Seed first, always. It ensures the room exists.
         seed = await self._start_runner("seed", SeedRunner)
         try:
