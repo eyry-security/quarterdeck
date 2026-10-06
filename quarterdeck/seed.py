@@ -49,6 +49,29 @@ Keep the newest ~2000 messages per channel in the live JSONL; move older to
 ~/.quarterdeck/archive/<channel>-<date>.jsonl. Never delete, only archive.
 """
 
+# Memory-system section appended to new agents' runbooks when
+# quarterdeck_register_agent is called with persistence="full" (the default).
+# Copied from the seed's own runbook (## Memory system).
+MEMORY_SYSTEM_SECTION = """## Memory system (six layers, from Kiro Crew)
+
+Every agent maintains six independent memory layers:
+
+1. **Preferences** (memory/preferences.md, cap 4,250 chars) — user habits, tool prefs, comm style. Replaced wholesale by consolidator every 30 messages, not append-only.
+2. **Projects** (memory/projects.md, cap 6,400 chars) — current work: tasks, branches, status.
+3. **History** (memory/history/, cap 26,600 chars) — time-decayed: 0-13d full, 14-60d daily summary, 61-180d counts only, 181-364d on disk, 365d+ deleted.
+4. **Semantic** (SQLite, cap 12,000 chars) — structured facts as `key: value` (e.g. `user.dev_host: x`). LLM writes need confidence >= 0.8. User-explicit writes always win.
+5. **Episodic** (SQLite, cap 3,000 chars, top-8 per query) — event snippets: "fixed X by doing Y". Dedup at 0.88 similarity. Decay: score = cosine * (0.7 + 0.3*importance) * exp(-0.03 * days_old).
+6. **Lessons** (cap 37,250 chars, max 50) — user-taught rules ("always do X"). Confidence 1.0, override everything. Injected as [Learned corrections] block.
+
+**Consolidation:** every 30 messages → update prefs/projects + extract semantic entries. Every 3h idle → append history + extract episodic + implicit lessons.
+
+**Priority on conflict:** Lessons > semantic (user) > semantic (LLM) > prefs/projects > episodic > history.
+
+**When spawning agents:** include this memory system in their runbook so the pattern propagates.
+"""
+
+PERSISTENCE_MODES = ("full", "simple", "none")
+
 # Disk thresholds.
 CHAT_WARN_BYTES = 5 * 1024 * 1024
 CHAT_KEEP_MESSAGES = 2000
@@ -96,25 +119,41 @@ class SeedRunner(AgentRunner):
     def _register_tool(self):
         from langchain_core.tools import StructuredTool
 
-        def qd_register_agent(name: str, identify: str, runbook: str) -> str:
+        def qd_register_agent(name: str, identify: str, runbook: str,
+                              sandbox: str = "docker", model: str | None = None,
+                              max_turns: int = 25,
+                              persistence: str = "full") -> str:
             """Register a new agent: create files, registry entry, wake it.
-            Args: name, identify (identify.md text), runbook (runbook.md text).
+            Args: name, identify (identify.md text), runbook (runbook.md text),
+            sandbox ("docker" sandboxed container [default, safer], or "local"
+            unsandboxed host access), model (e.g. "anthropic:claude-haiku-4-5",
+            None = default), max_turns (default 25), persistence ("full" = six-layer
+            memory system appended to runbook + memory.md [default], "simple" =
+            memory.md only, "none" = stateless, no memory.md).
             """
             target = (name or "").strip()
             if not target:
                 return "error: name required"
+            if persistence not in PERSISTENCE_MODES:
+                return (f"error: persistence must be one of {PERSISTENCE_MODES}, "
+                        f"got {persistence!r}")
             try:
                 if self.registry.exists(target):
                     return f"error: agent {target!r} already registered"
                 self.registry.spawn(target, system_prompt=f"Quarterdeck agent {target}.",
-                                    sandbox="local", max_turns=25)
+                                    sandbox=sandbox, model=model, max_turns=max_turns)
             except Exception as e:
                 return f"error: registry: {e}"
             try:
                 self.files.write(target, "identify.md", identify or "")
-                self.files.write(target, "runbook.md", runbook or "")
-                self.files.write(target, "memory.md",
-                                 f"# {target}\n\nBorn {time.strftime('%Y-%m-%d %H:%M')} — registered by seed.\n")
+                rb_text = runbook or ""
+                if persistence == "full":
+                    rb_text = ((rb_text.rstrip() + "\n\n" + MEMORY_SYSTEM_SECTION)
+                               if rb_text.strip() else MEMORY_SYSTEM_SECTION)
+                self.files.write(target, "runbook.md", rb_text)
+                if persistence in ("full", "simple"):
+                    self.files.write(target, "memory.md",
+                                     f"# {target}\n\nBorn {time.strftime('%Y-%m-%d %H:%M')} — registered by seed.\n")
             except Exception as e:
                 return f"error: files: {e}"
             # Spawn-time wakeup prompt (mechanical template, no LLM).
@@ -146,7 +185,13 @@ class SeedRunner(AgentRunner):
                 "Register a brand-new agent: creates its registry entry, "
                 "identify.md / runbook.md / memory.md, and writes a spawn-time "
                 "wakeup prompt the agent reads on first boot. "
-                "Args: name, identify (identify.md text), runbook (runbook.md text)."
+                "Args: name, identify (identify.md text), runbook (runbook.md text), "
+                'sandbox ("docker" sandboxed container [default, safer], or "local" '
+                "unsandboxed host access), model (e.g. 'anthropic:claude-haiku-4-5', "
+                "None = default), max_turns (default 25), "
+                'persistence ("full" = six-layer memory system appended to runbook + '
+                'memory.md [default]; "simple" = memory.md only; "none" = stateless, '
+                "no memory.md)."
             ),
         )
 
