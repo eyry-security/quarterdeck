@@ -230,9 +230,9 @@ header .sub { color: var(--muted); font-size: 13px; }
 </header>
 <div id="app">
   <div id="sidebar">
+    <div class="side-section"><h3>Agents</h3><div id="agents"></div></div>
     <div class="side-section"><h3>Channels</h3><div id="channels"></div></div>
     <button id="add-chan">+ new channel</button>
-    <div class="side-section"><h3>Agents</h3><div id="agents"></div></div>
   </div>
   <div id="main">
     <div id="chan-head"><span id="chan-name">#general</span><span id="view-tag" style="display:none">thoughts</span><select id="model-picker" style="display:none" title="Agent model"></select><button id="deregister-btn" style="display:none" title="Deregister this agent">deregister</button><button id="resetenv-btn" style="display:none" title="Reset environment: wipe /work, rebuild from clean image">reset env</button><span id="live-badge">LIVE</span></div>
