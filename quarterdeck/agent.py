@@ -57,10 +57,12 @@ class AgentRunner:
     poll_interval = POLL_INTERVAL
     proactive_interval = PROACTIVE_INTERVAL
 
-    def __init__(self, name: str, home: Path | None = None, daemon=None):
+    def __init__(self, name: str, home: Path | None = None, daemon=None,
+                 allow_local: bool = False):
         self.name = name.strip()
         self.home = Path(home) if home else home_dir()
         self.daemon = daemon
+        self.allow_local = allow_local
         self.registry = AgentRegistry(home=self.home)
         self.files = AgentFiles(home=self.home)
         self.chat = Chat(home=self.home)

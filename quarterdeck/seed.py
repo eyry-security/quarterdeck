@@ -84,8 +84,9 @@ class SeedRunner(AgentRunner):
     poll_interval = 30.0
     proactive_interval = 300.0
 
-    def __init__(self, name: str = "seed", home: Path | None = None, daemon=None):
-        super().__init__(name, home=home, daemon=daemon)
+    def __init__(self, name: str = "seed", home: Path | None = None, daemon=None,
+                 allow_local: bool = False):
+        super().__init__(name, home=home, daemon=daemon, allow_local=allow_local)
         self._last_status = 0.0
         self._seen_users: set[str] = self._load_greeted()
 

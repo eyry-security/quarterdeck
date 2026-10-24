@@ -79,11 +79,20 @@ quarterdeck spawn --name scout \
   --prompt "Check the scope for new hosts and summarize anything worth a look, {agent_name}."
 ```
 
-Start the control plane. Scheduled agents wake, work in a Pinnace sandbox, and post summaries to `#general`. Ctrl-C sleeps everything:
+Start the one control plane. The same supervised service owns the agent
+daemon, scheduler, event rules, ChatOps router, and web server. Scheduled
+agents wake, work in a Pinnace sandbox, and post summaries to `#general`.
+Ctrl-C sleeps everything:
 
 ```bash
-quarterdeck run
+quarterdeck serve                 # web + daemon + schedules + rules
+quarterdeck run                   # same stack, headless (no web listener)
 ```
+
+`serve` binds to `127.0.0.1` by default. It is a local, single-host service:
+there is no auth or tenancy layer, so do not expose it to a network. Pass
+`--allow-local` only for development if you deliberately want local-sandbox
+agents; Docker is the default and fails closed when unavailable.
 
 See the roster, retire an agent (drops its schedules too):
 
@@ -102,7 +111,8 @@ quarterdeck [--home DIR] spawn --name NAME --system TEXT
     [--interval SECONDS] [--prompt TEMPLATE]
 quarterdeck list
 quarterdeck chat [--channel CH] [--say TEXT] [-n N]
-quarterdeck run
+quarterdeck serve [--host 127.0.0.1] [--port 8420] [--allow-local]
+quarterdeck run [--allow-local]
 quarterdeck forget --name NAME
 ```
 

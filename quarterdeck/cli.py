@@ -16,6 +16,7 @@ from .events import Event, EventBus, EventStore
 from .integrations import parse_aplomado_event
 from .models import DEFAULT_MODEL, resolve_model
 from .rules import Rule, RuleEngine, RuleError, RuleStore
+from .runtime import Runtime
 from .scheduler import Scheduler, SchedulerError
 
 
@@ -114,11 +115,14 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--file", required=True, help="event JSONL path, or '-' for stdin")
     ingest.add_argument("--allow-local", action="store_true")
 
-    serve = sub.add_parser("serve", help="run the webchat server (KiwiIRC-style agent room)")
+    serve = sub.add_parser("serve", help="run the unified webchat + agent service")
     serve.add_argument("--port", type=int, default=8420)
-    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--host", default="127.0.0.1",
+                       help="bind address (default: loopback only)")
     serve.add_argument("--agents", action="store_true",
-                       help="also boot the agent daemon (seed -> agents)")
+                       help="backward-compatible no-op: the daemon always runs")
+    serve.add_argument("--allow-local", action="store_true",
+                       help="allow local-sandbox agents (development only)")
     return parser
 
 
@@ -178,22 +182,19 @@ def cmd_chat(args) -> int:
 
 
 def cmd_run(args) -> int:
-    scheduler, registry, chat, bus = _scheduler(args)
-    rules = RuleEngine(RuleStore(_resolve_home(args)), registry, scheduler, chat, bus)
-    chatops = ChatOps(registry, scheduler, chat, bus)
-    rules.start()
-    chatops.start()
-    _log(f"quarterdeck up: {len(scheduler.list())} schedule(s), {len(registry.list())} agent(s)")
-    scheduler.start()
+    """Run the full headless control plane (daemon + schedules + rules)."""
+    runtime = Runtime(
+        _resolve_home(args), allow_local=getattr(args, "allow_local", False)
+    )
+    runtime.start()
+    _log(
+        f"quarterdeck up: {len(runtime.scheduler.list())} schedule(s), "
+        f"{len(runtime.registry.list())} agent(s)"
+    )
     try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        pass
+        runtime.wait()
     finally:
-        chatops.stop()
-        rules.stop()
-        scheduler.stop()
+        runtime.stop()
     _log("all agents asleep")
     return 0
 
@@ -335,28 +336,24 @@ def cmd_ingest_aplomado(args) -> int:
 
 
 def cmd_serve(args) -> int:
-    """Run the webchat server."""
+    """Run the one service: web + daemon + schedules + rules + ChatOps."""
     from .web import create_app
     import uvicorn
-    daemon = None
-    if getattr(args, "agents", False):
-        import threading
-        from .daemon import Daemon
-        daemon = Daemon()
-        t = threading.Thread(target=_run_daemon_blocking, args=(daemon,),
-                             name="qd-daemon", daemon=True)
-        t.start()
-        print("[quarterdeck] agent daemon booting in background", flush=True)
-    uvicorn.run(create_app(daemon=daemon), host=args.host, port=args.port)
-    return 0
 
-
-def _run_daemon_blocking(daemon) -> None:
-    import asyncio
+    runtime = Runtime(
+        _resolve_home(args), allow_local=getattr(args, "allow_local", False)
+    )
+    runtime.start()
+    print(
+        f"[quarterdeck] service up: {len(runtime.scheduler.list())} schedule(s), "
+        f"{len(runtime.registry.list())} agent(s)",
+        flush=True,
+    )
     try:
-        asyncio.run(daemon.run())
-    except Exception as e:
-        print(f"[daemon] fatal: {e}", flush=True)
+        uvicorn.run(create_app(runtime=runtime), host=args.host, port=args.port)
+    finally:
+        runtime.stop()
+    return 0
 
 
 _DISPATCH = {

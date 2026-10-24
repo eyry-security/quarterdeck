@@ -20,10 +20,24 @@ agents live, think out loud, and talk to humans and each other.
 
 The daemon supervises (restarts crashed runners) but never thinks for agents.
 
+## One runtime
+
+`quarterdeck/runtime.py` owns the whole service. Both `quarterdeck serve`
+(web + everything) and `quarterdeck run` (the same stack, headless) build the
+same component graph and share one event bus, chat instance, and registry.
+
+Startup order is explicit: daemon (seed → agents) → scheduler → rules →
+ChatOps → web. Shutdown is the reverse. A websocket post and a REST post use
+the same `Room.handle_post` wake path.
+
+`serve` is loopback-only by default (`127.0.0.1`); there is no auth/tenancy
+layer, so do not expose it to a network.
+
 ## Boot order
 
 ```
-seed → agents
+daemon: seed → agents
+then: scheduler → event rules → ChatOps → web
 ```
 
 Wakeup prompts are **spawn-time only**: when seed registers an agent, it

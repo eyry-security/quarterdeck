@@ -102,12 +102,21 @@ def dm_channel(a: str, b: str) -> str:
 class Room:
     """Live room state: chat, registry, files, websocket subscribers."""
 
-    def __init__(self, home: Path | None = None, daemon=None):
-        self.bus = EventBus()
-        self.chat = Chat(home=home, bus=self.bus)
-        self.registry = AgentRegistry(home=home)
-        self.users = UserRegistry(home=home)
-        self.files = AgentFiles(home=home)
+    def __init__(self, home: Path | None = None, daemon=None, *,
+                 bus: EventBus | None = None, chat: Chat | None = None,
+                 registry: AgentRegistry | None = None, runtime=None):
+        self.runtime = runtime
+        if runtime is not None:
+            home = runtime.home
+            daemon = runtime.daemon
+            bus = runtime.bus
+            chat = runtime.chat
+            registry = runtime.registry
+        self.bus = bus or EventBus()
+        self.chat = chat or Chat(home=home, bus=self.bus)
+        self.registry = registry or AgentRegistry(home=home)
+        self.users = UserRegistry(home=self.chat.home)
+        self.files = AgentFiles(home=self.chat.home)
         self.daemon = daemon
         self._subs: dict[str, set[WebSocket]] = {}
         self._lock = asyncio.Lock()
@@ -195,9 +204,24 @@ class Room:
         msg = self.chat.post(channel, author, text, cid=cid)
         return msg
 
+    def handle_post(self, channel: str, author: str, text: str,
+                    cid: str | None = None) -> dict:
+        """Post and route wakeups exactly like a human message.
 
-def create_app(home: Path | None = None, daemon=None) -> FastAPI:
-    room = Room(home=home, daemon=daemon)
+        REST, websocket, CLI, and internal posts all go through this path so a
+        browser message can never bypass mention/subscription wakeups.
+        """
+        msg = self.post(channel, author, text, cid=cid)
+        self.wake_mentioned(text)
+        self.wake_subscribers(sanitize_channel(channel))
+        return msg
+
+
+def create_app(home: Path | None = None, daemon=None, *, runtime=None,
+               bus: EventBus | None = None, chat: Chat | None = None,
+               registry: AgentRegistry | None = None) -> FastAPI:
+    room = Room(home=home, daemon=daemon, runtime=runtime, bus=bus, chat=chat,
+                registry=registry)
     app = FastAPI(title="Quarterdeck")
 
     @app.get("/api/channels")
@@ -224,13 +248,11 @@ def create_app(home: Path | None = None, daemon=None) -> FastAPI:
         except UserError as e:
             raise HTTPException(400, str(e))
         try:
-            msg = room.post(channel, body.author, body.text, cid=body.cid)
+            msg = room.handle_post(channel, body.author, body.text, cid=body.cid)
         except ValueError as e:
             raise HTTPException(400, str(e))
-        # Broadcast happens via the chat post-listener.
-        # Any message wakes @mentioned agents AND channel subscribers.
-        room.wake_mentioned(body.text)
-        room.wake_subscribers(sanitize_channel(channel))
+        # Broadcast happens via the chat post-listener; wakeups happen inside
+        # handle_post so websocket and REST share one route.
         return msg
 
     @app.post("/api/dm")
@@ -455,9 +477,9 @@ def create_app(home: Path | None = None, daemon=None) -> FastAPI:
                     continue
                 if payload.get("type") == "post":
                     try:
-                        room.post(channel, payload.get("author", "?"),
-                                  payload.get("text", ""),
-                                  cid=payload.get("cid"))
+                        room.handle_post(channel, payload.get("author", "?"),
+                                         payload.get("text", ""),
+                                         cid=payload.get("cid"))
                     except ValueError:
                         continue
                 elif payload.get("type") == "ping":
