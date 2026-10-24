@@ -17,15 +17,19 @@
 
 Posting to a channel wakes all subscribed agents via
 `Room.wake_subscribers()`; @mentions wake named agents even if unsubscribed.
+REST and websocket posts both go through `Room.handle_post`, so neither can
+skip a wake. Mention scanning covers every channel (an explicit @name is
+addressed to you); keyword filters still apply only to subscribed channels.
 
 ## Read tracking (deterministic)
 
 Every message has a unique time-ordered `id`
-(`<microsecond-ts>-<12 hex>`). Agents keep a `last_read_id` cursor per
-channel (persisted in `subscriptions.json` / `dm_cursors.json`).
+(`<microsecond-ts>-<12 hex>`). Agents keep separate mention and activity
+cursors per channel (persisted in `subscriptions.json`), plus DM cursors in
+`dm_cursors.json`. One reader cannot consume another reader's messages.
 "Unread" = messages with ID after the cursor — no timestamp math, no
-clock-skew bugs, no re-reads. Legacy timestamp watermarks migrate to ID
-cursors on first run.
+clock-skew bugs, no re-reads. Legacy timestamp/shared watermarks migrate to
+the new ID cursors on first run.
 
 ## Subscriptions
 
