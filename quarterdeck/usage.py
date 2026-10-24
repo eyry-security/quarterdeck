@@ -18,14 +18,16 @@ from threading import Lock
 from .agent_registry import home_dir
 
 # Fallback $/1M tokens, used when Pinnace could not price a record.
-# (Anthropic list prices, Oct 2026; Pinnace prices first when it can.)
+# (Provider list prices, Oct 2026; Pinnace prices first when it can.)
 FALLBACK_PRICING = {
     "claude-opus-4-6": {"input": 15.0, "output": 75.0},
     "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
     "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
+    "deepseek-flash": {"input": 0.15, "output": 0.60, "cache_hit": 0.003},
+    "deepseek-v4-pro": {"input": 0.66, "output": 1.98},
 }
 
-# Anthropic prompt-cache multipliers (standard tier).
+# Prompt-cache multipliers used when a model has no explicit cache-hit price.
 CACHE_READ_MULT = 0.1    # cache reads billed at 10% of input price
 CACHE_WRITE_MULT = 1.25  # 5-minute cache writes billed at 125% of input price
 
@@ -50,9 +52,10 @@ def _fallback_cost(model_key: str, in_tok: int, out_tok: int,
     if not prices:
         return None
     uncached = max(in_tok - cache_read - cache_write, 0)
+    cache_read_price = prices.get("cache_hit", prices["input"] * CACHE_READ_MULT)
     return (uncached / 1e6 * prices["input"]
             + out_tok / 1e6 * prices["output"]
-            + cache_read / 1e6 * prices["input"] * CACHE_READ_MULT
+            + cache_read / 1e6 * cache_read_price
             + cache_write / 1e6 * prices["input"] * CACHE_WRITE_MULT)
 
 

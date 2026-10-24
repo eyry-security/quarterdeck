@@ -14,6 +14,7 @@ from .chat import DEFAULT_CHANNEL, Chat
 from .chatops import ChatOps
 from .events import Event, EventBus, EventStore
 from .integrations import parse_aplomado_event
+from .models import DEFAULT_MODEL, resolve_model
 from .rules import Rule, RuleEngine, RuleError, RuleStore
 from .scheduler import Scheduler, SchedulerError
 
@@ -57,8 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
     spawn = sub.add_parser("spawn", help="register a new agent")
     spawn.add_argument("--name", required=True)
     spawn.add_argument("--system", required=True)
-    spawn.add_argument("--model", default=None,
-                       help="provider:model (default: anthropic:claude-opus-4-6 via Pinnace)")
+    spawn.add_argument("--model", default=DEFAULT_MODEL,
+                       help=f"provider:model (default: {DEFAULT_MODEL} via Pinnace)")
     spawn.add_argument("--sandbox", choices=("docker", "local"), default="docker")
     spawn.add_argument("--max-turns", type=int, default=30)
     spawn.add_argument("--interval", type=float, default=0)
@@ -129,7 +130,7 @@ def cmd_spawn(args) -> int:
     registry, chat, _bus = _components(args)
     try:
         agent = registry.spawn(
-            args.name, args.system, model=args.model,
+            args.name, args.system, model=resolve_model(args.model),
             sandbox=args.sandbox, max_turns=args.max_turns,
         )
         if args.interval:
@@ -139,7 +140,7 @@ def cmd_spawn(args) -> int:
     except (RegistryError, SchedulerError) as exc:
         _log(f"error: {exc}")
         return 1
-    _log(f"spawned agent {agent.name!r} (model={agent.model or 'anthropic:claude-opus-4-6'})")
+    _log(f"spawned agent {agent.name!r} (model={resolve_model(agent.model)})")
     return 0
 
 
@@ -154,7 +155,7 @@ def cmd_list(args) -> int:
     for agent in registry.list():
         schedule = schedules.get(agent.name)
         wake = f"every {schedule.interval:g}s" if schedule else "unscheduled"
-        print(f"{agent.name:20} {agent.state:8} {wake:20} model={agent.model or 'anthropic:claude-opus-4-6'}")
+        print(f"{agent.name:20} {agent.state:8} {wake:20} model={resolve_model(agent.model)}")
     return 0
 
 
