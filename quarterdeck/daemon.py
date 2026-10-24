@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import threading
 import time
 from pathlib import Path
 
@@ -26,9 +27,13 @@ RESTART_COOLDOWN = 300.0  # seconds before retrying a repeatedly-crashing agent
 
 
 class Daemon:
-    def __init__(self, home: Path | None = None):
+    def __init__(self, home: Path | None = None, *, allow_local: bool = False,
+                 runner_cls=AgentRunner, seed_cls=SeedRunner):
         self.home = Path(home) if home else home_dir()
         self.home.mkdir(parents=True, exist_ok=True)
+        self.allow_local = allow_local
+        self.runner_cls = runner_cls
+        self.seed_cls = seed_cls
         self.registry = AgentRegistry(home=self.home)
         self.runners: dict[str, AgentRunner] = {}
         self.tasks: dict[str, asyncio.Task] = {}
@@ -39,6 +44,7 @@ class Daemon:
         self._deregistered: set[str] = set()  # never auto-restart these
         self.booted_at = time.time()
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._ready = threading.Event()
 
     # ------------------------------------------------------------------
     # public API (also used by seed / tools)
@@ -135,9 +141,23 @@ class Daemon:
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self._drain_pending()))
 
     def stop(self) -> None:
+        """Stop all runners; safe to call from the web thread or same loop."""
+        loop = self._loop
+        if loop is not None and loop.is_running():
+            try:
+                loop.call_soon_threadsafe(self._stop.set)
+                for runner in list(self.runners.values()):
+                    loop.call_soon_threadsafe(runner.stop)
+                return
+            except RuntimeError:
+                pass
         self._stop.set()
-        for r in self.runners.values():
-            r.stop()
+        for runner in list(self.runners.values()):
+            runner.stop()
+
+    def wait_ready(self, timeout: float = 10.0) -> bool:
+        """Wait until boot has started every registered agent."""
+        return self._ready.wait(timeout)
 
     # ------------------------------------------------------------------
     # boot
@@ -149,8 +169,11 @@ class Daemon:
         # 0. Seed is special (gets its 🌱 badge in the UI).
         try:
             if not self.registry.exists("seed"):
-                self.registry.spawn("seed", system_prompt="Genesis agent.",
-                                    sandbox="local", max_turns=10)
+                self.registry.spawn(
+                    "seed", system_prompt="Genesis agent.",
+                    sandbox="local" if self.allow_local else "docker",
+                    max_turns=10,
+                )
         except Exception as e:
             print(f"[daemon] registry ensure seed: {e}", flush=True)
         # Migration: the orchestrator is gone (wakeup is a seed-time function now).
@@ -161,7 +184,7 @@ class Daemon:
         except Exception as e:
             print(f"[daemon] orchestrator retire: {e}", flush=True)
         # 1. Seed first, always. It ensures the room exists.
-        seed = await self._start_runner("seed", SeedRunner)
+        seed = await self._start_runner("seed", self.seed_cls)
         try:
             await seed.boot_room()
         except Exception as e:
@@ -173,10 +196,11 @@ class Daemon:
         for agent in self._safe_list():
             if agent.name == "seed":
                 continue
-            await self._start_runner(agent.name, AgentRunner)
+            await self._start_runner(agent.name, self.runner_cls)
             self._heartbeat()
 
         print(f"[daemon] room live with {len(self.tasks)} runners", flush=True)
+        self._ready.set()
         await self._supervise()
 
     def _safe_list(self):
@@ -186,12 +210,13 @@ class Daemon:
             print(f"[daemon] registry list failed: {e}", flush=True)
             return []
 
-    async def _start_runner(self, name: str, cls) -> AgentRunner:
+    async def _start_runner(self, name: str, cls=None) -> AgentRunner:
         existing = self.tasks.get(name)
         if existing is not None and not existing.done():
             return self.runners[name]
-        runner = cls(name, home=self.home, daemon=self)
-        # SeedRunner takes no name arg default; AgentRunner does. Both accept (name, home, daemon).
+        cls = cls or (self.seed_cls if name == "seed" else self.runner_cls)
+        runner = cls(name, home=self.home, daemon=self,
+                     allow_local=self.allow_local)
         self.runners[name] = runner
         self.tasks[name] = asyncio.create_task(self._wrap(name, runner), name=f"qd-{name}")
         print(f"[daemon] started runner: {name}", flush=True)
@@ -216,13 +241,13 @@ class Daemon:
             if task is not None and not task.done():
                 continue
             if name == "seed":
-                await self._start_runner(name, SeedRunner)
+                await self._start_runner(name, self.seed_cls)
             else:
                 try:
                     self.registry.get(name)
                 except Exception:
                     continue
-                await self._start_runner(name, AgentRunner)
+                await self._start_runner(name, self.runner_cls)
 
     # ------------------------------------------------------------------
     # supervision
@@ -252,7 +277,7 @@ class Daemon:
                 if restarts >= MAX_RESTARTS and time.time() - last < RESTART_COOLDOWN:
                     continue
                 print(f"[daemon] restarting crashed runner: {name} (#{restarts + 1})", flush=True)
-                cls = SeedRunner if name == "seed" else AgentRunner
+                cls = self.seed_cls if name == "seed" else self.runner_cls
                 await self._start_runner(name, cls)
             self._heartbeat()
         # Shutdown: cancel everything.

@@ -35,16 +35,21 @@ def _save(home: Path | None, agent: str, data: dict) -> None:
     _subs_file(home, agent).write_text(json.dumps(data, indent=2))
 
 
-def _cursor_for(data: dict, channel: str, chat, old_ts_key: str) -> str | None:
-    """ID cursor for a channel, migrating legacy timestamp watermarks.
+def _cursor_for(data: dict, channel: str, chat, old_ts_key: str,
+                cursor_key: str) -> str | None:
+    """ID cursor for one independent reader, migrating legacy watermarks.
 
-    On first run after upgrade, an old timestamp watermark is converted to
-    the ID of the latest message at or before that timestamp — precise,
-    no re-reads, no misses.
+    Mentions and channel activity each own a cursor map. On first run after
+    upgrade, the old shared ``read_cursors`` map (or an even older timestamp
+    watermark) is copied into the new map so nothing is re-read.
     """
-    cursors = data.setdefault("read_cursors", {})
+    cursors = data.setdefault(cursor_key, {})
     if channel in cursors:
         return cursors[channel]
+    legacy = data.get("read_cursors", {})
+    if channel in legacy:
+        cursors[channel] = legacy[channel]
+        return legacy[channel]
     old_ts = data.get(old_ts_key, 0.0) or 0.0
     if old_ts:
         latest_id = None
@@ -62,8 +67,10 @@ def _cursor_for(data: dict, channel: str, chat, old_ts_key: str) -> str | None:
     return None
 
 
-def _advance_cursor(data: dict, channel: str, messages: list[dict]) -> None:
-    latest = data["read_cursors"].get(channel)
+def _advance_cursor(data: dict, channel: str, messages: list[dict],
+                    cursor_key: str) -> None:
+    cursors = data.setdefault(cursor_key, {})
+    latest = cursors.get(channel)
     for m in messages:
         try:
             mid = message_id(m)
@@ -72,7 +79,7 @@ def _advance_cursor(data: dict, channel: str, messages: list[dict]) -> None:
         if latest is None or mid > latest:
             latest = mid
     if latest:
-        data["read_cursors"][channel] = latest
+        cursors[channel] = latest
 
 
 def subscribe(agent: str, channels: list[str], filters: list[str] | None = None,
@@ -113,18 +120,30 @@ def get_subscriptions(agent: str, home: Path | None = None) -> dict:
 
 
 def check_mentions(agent: str, chat, home: Path | None = None) -> dict:
-    """Check subscribed channels for new @mentions and keyword hits.
+    """Check for new @mentions (any channel) and keyword hits (subscriptions).
 
-    Returns unread mentions since the per-channel ID cursor, then advances
-    the cursor past everything seen (even non-matching messages are "read").
+    An @mention is addressed to the agent explicitly, so it is delivered even
+    when the agent is not subscribed to that channel. Keyword filters still
+    apply only to subscribed channels. The mention cursor is independent of
+    the activity cursor, so neither reader can consume the other's messages.
     """
     data = _load(home, agent)
     agent_lc = agent.strip().lower()
     mention_pat = re.compile(rf"@{re.escape(agent_lc)}\b", re.IGNORECASE)
+    subscribed = data["channels"]
+
+    try:
+        channels = set(chat.channels())
+    except Exception:
+        channels = set()
+    # Mentions are explicit and channel-independent; keywords require a sub.
+    channels.update(subscribed)
 
     hits = []
-    for channel, sub in data["channels"].items():
-        cursor = _cursor_for(data, channel, chat, "last_check")
+    for channel in sorted(channels):
+        sub = subscribed.get(channel, {})
+        cursor = _cursor_for(data, channel, chat, "last_check",
+                             "mention_cursors")
         try:
             msgs = chat.after(channel, cursor, n=200)
         except Exception:
@@ -135,11 +154,12 @@ def check_mentions(agent: str, chat, home: Path | None = None) -> dict:
                 continue
             text = str(m.get("text", ""))
             matched = mention_pat.search(text) is not None
-            # Keyword filters
-            for kw in sub.get("filters", []):
-                if kw.lower() in text.lower():
-                    matched = True
-                    break
+            # Keyword filters apply only where the agent subscribed.
+            if channel in subscribed:
+                for kw in sub.get("filters", []):
+                    if kw.lower() in text.lower():
+                        matched = True
+                        break
             if matched:
                 hits.append({
                     "channel": channel,
@@ -148,7 +168,7 @@ def check_mentions(agent: str, chat, home: Path | None = None) -> dict:
                     "ts": m.get("ts"),
                     "id": message_id(m),
                 })
-        _advance_cursor(data, channel, msgs)
+        _advance_cursor(data, channel, msgs, "mention_cursors")
 
     _save(home, agent, data)
     hits.sort(key=lambda h: (h["ts"], h["id"]))
@@ -166,7 +186,8 @@ def check_activity(agent: str, chat, home: Path | None = None) -> dict:
 
     msgs_out = []
     for channel in data["channels"].keys():
-        cursor = _cursor_for(data, channel, chat, "last_activity_check")
+        cursor = _cursor_for(data, channel, chat, "last_activity_check",
+                             "activity_cursors")
         try:
             msgs = chat.after(channel, cursor, n=200)
         except Exception:
@@ -184,7 +205,7 @@ def check_activity(agent: str, chat, home: Path | None = None) -> dict:
                 "ts": m.get("ts"),
                 "id": message_id(m),
             })
-        _advance_cursor(data, channel, msgs)
+        _advance_cursor(data, channel, msgs, "activity_cursors")
 
     _save(home, agent, data)
     msgs_out.sort(key=lambda h: (h["ts"], h["id"]))

@@ -79,11 +79,20 @@ quarterdeck spawn --name scout \
   --prompt "Check the scope for new hosts and summarize anything worth a look, {agent_name}."
 ```
 
-Start the control plane. Scheduled agents wake, work in a Pinnace sandbox, and post summaries to `#general`. Ctrl-C sleeps everything:
+Start the one control plane. The same supervised service owns the agent
+daemon, scheduler, event rules, ChatOps router, and web server. Scheduled
+agents wake, work in a Pinnace sandbox, and post summaries to `#general`.
+Ctrl-C sleeps everything:
 
 ```bash
-quarterdeck run
+quarterdeck serve                 # web + daemon + schedules + rules
+quarterdeck run                   # same stack, headless (no web listener)
 ```
+
+`serve` binds to `127.0.0.1` by default. It is a local, single-host service:
+there is no auth or tenancy layer, so do not expose it to a network. Pass
+`--allow-local` only for development if you deliberately want local-sandbox
+agents; Docker is the default and fails closed when unavailable.
 
 See the roster, retire an agent (drops its schedules too):
 
@@ -102,7 +111,8 @@ quarterdeck [--home DIR] spawn --name NAME --system TEXT
     [--interval SECONDS] [--prompt TEMPLATE]
 quarterdeck list
 quarterdeck chat [--channel CH] [--say TEXT] [-n N]
-quarterdeck run
+quarterdeck serve [--host 127.0.0.1] [--port 8420] [--allow-local]
+quarterdeck run [--allow-local]
 quarterdeck forget --name NAME
 ```
 
@@ -110,7 +120,9 @@ quarterdeck forget --name NAME
 
 ## Concepts
 
-**Wake/sleep.** An agent is a Pinnace config plus a state. When an interval elapses, the scheduler flips the agent to `working`, runs the prompt through `PinnaceAgent` (session `quarterdeck-<name>`, so each agent's history persists), and posts a summary to chat. Then the agent sleeps (`idle`). Idle agents cost nothing — no model calls, no containers.
+**Wake/sleep.** An agent is a Pinnace config plus a state. When an interval elapses, the scheduler flips the agent to `working`, runs the prompt through `PinnaceAgent` (one durable `agent-<hash>`
+session per name, shared with the daemon runner, so each agent's history
+persists), and posts a summary to chat. Then the agent sleeps (`idle`). Idle agents cost nothing — no model calls, no containers.
 
 **Identity.** `spawn` registers the config under a name. The name is how you address the agent in chat and how the scheduler finds it. `forget` retires it and drops its schedules.
 

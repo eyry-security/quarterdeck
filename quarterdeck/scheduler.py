@@ -22,12 +22,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
+from .agent_config import build_sandbox, resolve_agent_config
 from .agent_registry import IDLE, WORKING, Agent, AgentRegistry, agent_key, home_dir
 from .chat import DEFAULT_CHANNEL, Chat
 from .events import RUN_COMPLETED, RUN_REQUESTED, TICK, Event, EventBus
 from .executor import DaemonExecutor
 from .locking import file_lock
-from .models import resolve_model
 
 Runner = Callable[[Agent, str], str]
 """A runner wakes an agent with a prompt and returns a summary string."""
@@ -51,30 +51,15 @@ def default_runner(agent: Agent, prompt: str, *, home: Path | None = None,
                    allow_local: bool = False) -> str:
     """Run one agent through the approved Pinnace configuration API."""
     try:
-        from pinnace import AgentConfig, DockerSandbox, LocalSandbox, PinnaceAgent, SessionStore
+        from pinnace import PinnaceAgent
     except ImportError as e:
         raise RuntimeError(PINNACE_INSTALL_HINT) from e
 
-    if agent.sandbox == "local" and not allow_local:
-        raise RuntimeError(
-            "local sandbox is disabled for unattended runs; enable it explicitly for development"
-        )
-    sandbox = (
-        DockerSandbox()
-        if agent.sandbox == "docker"
-        else LocalSandbox(unsafe_ok=True)
+    sandbox = build_sandbox(
+        agent, home=home, allow_local=allow_local, persistent=False
     )
     try:
-        session_root = (Path(home) if home else home_dir()) / "pinnace"
-        config = AgentConfig.resolve(
-            model=resolve_model(agent.model),
-            sandbox=sandbox,
-            system_prompt=agent.system_prompt,
-            max_turns=agent.max_turns,
-            session_store=SessionStore(session_root),
-            session_id=f"agent-{agent_key(agent.name)}",
-            log=lambda message: None,
-        )
+        config = resolve_agent_config(agent, sandbox=sandbox, home=home)
         runner = PinnaceAgent.from_config(config)
         result = runner.run(prompt)
     finally:

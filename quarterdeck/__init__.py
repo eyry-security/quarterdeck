@@ -22,10 +22,13 @@ from . import subscriptions
 from .thoughts import thought_channel
 
 def __getattr__(name: str):
-    # Lazy: langchain_core is heavy; only import on explicit use.
+    # Lazy: langchain_core / the agent runtime are heavy; import on explicit use.
     if name == "quarterdeck_tools":
         from .tools import quarterdeck_tools
         return quarterdeck_tools
+    if name == "Runtime":
+        from .runtime import Runtime
+        return Runtime
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 from .scheduler import Scheduler
 
@@ -47,6 +50,7 @@ __all__ = [
     "Rule",
     "RuleEngine",
     "RuleStore",
+    "Runtime",
     "Scheduler",
     "TICK",
     "WEBHOOK",

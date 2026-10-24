@@ -178,8 +178,9 @@ class TestModelSwitcher:
     def test_runner_rebuilds_on_model_change(self, home):
         from quarterdeck.agent_registry import AgentRegistry
         reg = AgentRegistry(home=home)
-        reg.spawn("scout", system_prompt="x", model="anthropic:claude-haiku-4-5")
-        r = AgentRunner("scout", home=home)
+        reg.spawn("scout", system_prompt="x", model="anthropic:claude-haiku-4-5",
+                  sandbox="local")
+        r = AgentRunner("scout", home=home, allow_local=True)
         first = r.build_pinnace()
         assert r._pinnace_model == "anthropic:claude-haiku-4-5"
         assert r.build_pinnace() is first  # cached

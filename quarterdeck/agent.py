@@ -18,10 +18,13 @@ from pathlib import Path
 
 from . import subscriptions
 from . import usage as usage_mod
+from .agent_config import (build_sandbox, require_sandbox_policy,
+                           resolve_agent_config)
 from .agent_files import AgentFiles
-from .agent_registry import AgentRegistry, home_dir
+from .agent_registry import Agent, AgentRegistry, agent_key, home_dir
 from .agent_stream import post_thought, thought_stream_log
 from .chat import Chat
+from .locking import file_lock
 from .models import resolve_model
 from .thoughts import thought_channel
 from .tools import quarterdeck_tools
@@ -57,10 +60,12 @@ class AgentRunner:
     poll_interval = POLL_INTERVAL
     proactive_interval = PROACTIVE_INTERVAL
 
-    def __init__(self, name: str, home: Path | None = None, daemon=None):
+    def __init__(self, name: str, home: Path | None = None, daemon=None,
+                 allow_local: bool = False):
         self.name = name.strip()
         self.home = Path(home) if home else home_dir()
         self.daemon = daemon
+        self.allow_local = allow_local
         self.registry = AgentRegistry(home=self.home)
         self.files = AgentFiles(home=self.home)
         self.chat = Chat(home=self.home)
@@ -98,6 +103,14 @@ class AgentRunner:
     async def run(self) -> None:
         """Main loop: wake, then poll forever until stopped."""
         self._note(f"booting (loop cadence {self.poll_interval}s)")
+        if llm_available():
+            agent = self._registry_agent()
+            if agent is not None:
+                try:
+                    require_sandbox_policy(agent, allow_local=self.allow_local)
+                except Exception as exc:
+                    self._note(f"refusing to start: {exc}")
+                    return
         try:
             await self._wake()
         except Exception as e:  # wake must never kill the loop
@@ -327,10 +340,22 @@ class AgentRunner:
     # ------------------------------------------------------------------
     # act
     # ------------------------------------------------------------------
+    def _registry_agent(self) -> Agent | None:
+        try:
+            return self.registry.get(self.name)
+        except Exception:
+            return None
+
     def _system_prompt(self) -> str:
         identify = self.files.read(self.name, "identify.md").strip()
         memory = self.files.read(self.name, "memory.md").strip()
-        base = (
+        registry_agent = self._registry_agent()
+        registry_prompt = (
+            registry_agent.system_prompt.strip()
+            if registry_agent is not None else ""
+        )
+        base = (f"{registry_prompt[:4000]}\n\n" if registry_prompt else "")
+        base += (
             f"You are {self.name}, a persistent agent living in the Quarterdeck chat room.\n"
             "You are a first-class participant: you read channels, you speak when you have "
             "something worth saying, you DM other agents, and you keep an internal monologue "
@@ -357,26 +382,30 @@ class AgentRunner:
 
     def _current_model(self) -> str:
         """This agent's model reference, falling back to the Quarterdeck default."""
-        try:
-            return resolve_model(self.registry.get(self.name).model)
-        except Exception:
-            return resolve_model(None)
+        agent = self._registry_agent()
+        return resolve_model(agent.model if agent is not None else None)
 
     def sandbox(self):
-        """This agent's persistent sandbox (host-mounted /work). Built lazily."""
-        if self._sandbox is None:
-            from .persistent_sandbox import PersistentDockerSandbox
+        """This agent's registry-selected sandbox. Built lazily; fails closed."""
+        agent = self._registry_agent()
+        if agent is None:
+            agent = Agent(name=self.name, system_prompt="", sandbox="docker")
+        kind = require_sandbox_policy(agent, allow_local=self.allow_local)
+        if self._sandbox is not None and getattr(self, "_sandbox_kind", None) == kind:
+            return self._sandbox
+        if self._sandbox is not None:
             try:
-                self._sandbox = PersistentDockerSandbox(self.name, home=self.home)
+                self._sandbox.close()
             except Exception:
-                # Docker unavailable (tests, dev boxes): fall back so the
-                # agent still runs.
-                from pinnace.sandbox import DockerSandbox, SandboxError
-                try:
-                    self._sandbox = DockerSandbox()
-                except SandboxError:
-                    from pinnace.sandbox import LocalSandbox
-                    self._sandbox = LocalSandbox(unsafe_ok=True)
+                pass
+            self._sandbox = None
+        self._sandbox = build_sandbox(
+            agent,
+            home=self.home,
+            allow_local=self.allow_local,
+            persistent=(kind == "docker"),
+        )
+        self._sandbox_kind = kind
         return self._sandbox
 
     def reset_environment(self) -> str:
@@ -387,36 +416,38 @@ class AgentRunner:
         return "sandbox does not support reset (not a PersistentDockerSandbox)"
 
     def build_pinnace(self):
-        """Construct the Pinnace agent (lazy; defensive about signature drift).
+        """Construct the Pinnace agent through the shared AgentConfig resolver.
 
         Rebuilds when the registry model changes so PATCH /api/agents/{name}
-        (or quarterdeck_set_model) takes effect without a restart.
+        (or quarterdeck_set_model) takes effect without a restart. Uses the
+        same durable session id and registry values as scheduler runs.
         """
         model = self._current_model()
         if self._pinnace is not None and model == self._pinnace_model:
             return self._pinnace
         self._pinnace = None
-        from pinnace.agent import PinnaceAgent
+        from pinnace import PinnaceAgent
 
-        kwargs: dict = {
-            "tools": self.all_tools(),
-            "sandbox": self.sandbox(),
-            "system_prompt": self._system_prompt(),
-            "model": model,
-            "log": thought_stream_log(self.name, home=self.home),
-            "session_id": f"qd-{_safe(self.name)}",
-            "agent_id": self.name,
-            "max_turns": 25,
-        }
+        agent = self._registry_agent() or Agent(
+            name=self.name, system_prompt="", model=model, sandbox="docker"
+        )
         # 'thinking' enables Anthropic extended thinking; only pass it if the
         # installed Pinnace supports it (older installs raised TypeError).
         try:
             params = inspect.signature(PinnaceAgent.__init__).parameters
         except (TypeError, ValueError):
             params = {}
-        if "thinking" in params:
-            kwargs["thinking"] = True
-        self._pinnace = PinnaceAgent(**kwargs)
+        config = resolve_agent_config(
+            agent,
+            sandbox=self.sandbox(),
+            home=self.home,
+            tools=self.all_tools(),
+            log=thought_stream_log(self.name, home=self.home),
+            system_prompt=self._system_prompt(),
+            max_turns=agent.max_turns,
+            thinking="thinking" in params,
+        )
+        self._pinnace = PinnaceAgent.from_config(config)
         self._pinnace_model = model
         return self._pinnace
 
@@ -570,10 +601,13 @@ class AgentRunner:
             return
 
         def _run():
-            return agent.run(
-                context + "\n\n(Use quarterdeck_think to narrate as you work. "
-                "When you learn something durable, quarterdeck_memory_write it.)"
-            )
+            # Same per-agent file lock as scheduler runs: daemon turns and
+            # scheduled turns share one durable session and never overlap.
+            with file_lock(self.home / "locks" / f"agent-{agent_key(self.name)}.lock"):
+                return agent.run(
+                    context + "\n\n(Use quarterdeck_think to narrate as you work. "
+                    "When you learn something durable, quarterdeck_memory_write it.)"
+                )
 
         try:
             result = await asyncio.to_thread(_run)
