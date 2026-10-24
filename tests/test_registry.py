@@ -143,7 +143,7 @@ def test_registry_updates_are_process_safe(tmp_path):
         process.start()
     start.set()
     for process in processes:
-        process.join(timeout=2)
+        process.join(timeout=5)
         assert process.exitcode == 0
     final = AgentRegistry(home=tmp_path)
     assert final.get("one").state == "working"

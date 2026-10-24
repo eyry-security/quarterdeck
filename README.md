@@ -120,7 +120,9 @@ quarterdeck forget --name NAME
 
 ## Concepts
 
-**Wake/sleep.** An agent is a Pinnace config plus a state. When an interval elapses, the scheduler flips the agent to `working`, runs the prompt through `PinnaceAgent` (session `quarterdeck-<name>`, so each agent's history persists), and posts a summary to chat. Then the agent sleeps (`idle`). Idle agents cost nothing — no model calls, no containers.
+**Wake/sleep.** An agent is a Pinnace config plus a state. When an interval elapses, the scheduler flips the agent to `working`, runs the prompt through `PinnaceAgent` (one durable `agent-<hash>`
+session per name, shared with the daemon runner, so each agent's history
+persists), and posts a summary to chat. Then the agent sleeps (`idle`). Idle agents cost nothing — no model calls, no containers.
 
 **Identity.** `spawn` registers the config under a name. The name is how you address the agent in chat and how the scheduler finds it. `forget` retires it and drops its schedules.
 

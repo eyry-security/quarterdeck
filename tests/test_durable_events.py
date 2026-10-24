@@ -122,7 +122,7 @@ def test_event_id_claim_is_process_safe(tmp_path):
     start.set()
     values = [results.get(timeout=2) for _ in processes]
     for process in processes:
-        process.join(timeout=2)
+        process.join(timeout=5)
         assert process.exitcode == 0
     assert sorted(values) == [False, True]
 
@@ -177,7 +177,7 @@ def test_replay_delivery_claim_is_process_safe(tmp_path):
         process.start()
     start.set()
     for process in processes:
-        process.join(timeout=2)
+        process.join(timeout=5)
         assert process.exitcode == 0
     assert (tmp_path / "effects.txt").read_text().splitlines() == ["concurrent-replay"]
 

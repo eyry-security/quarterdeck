@@ -20,6 +20,13 @@ agents live, think out loud, and talk to humans and each other.
 
 The daemon supervises (restarts crashed runners) but never thinks for agents.
 
+Every wake path resolves the registry's `sandbox`, `max_turns`, and
+`system_prompt` through the same `AgentConfig` helper and the same durable
+session id (`agent-<hash>` of the name). Sandboxing is fail-closed: a Docker
+agent never silently falls back to running commands on the host. Local
+sandboxes require an explicit development flag (`--allow-local` or
+`QUARTERDECK_ALLOW_LOCAL=1`).
+
 ## One runtime
 
 `quarterdeck/runtime.py` owns the whole service. Both `quarterdeck serve`

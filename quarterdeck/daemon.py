@@ -169,8 +169,11 @@ class Daemon:
         # 0. Seed is special (gets its 🌱 badge in the UI).
         try:
             if not self.registry.exists("seed"):
-                self.registry.spawn("seed", system_prompt="Genesis agent.",
-                                    sandbox="local", max_turns=10)
+                self.registry.spawn(
+                    "seed", system_prompt="Genesis agent.",
+                    sandbox="local" if self.allow_local else "docker",
+                    max_turns=10,
+                )
         except Exception as e:
             print(f"[daemon] registry ensure seed: {e}", flush=True)
         # Migration: the orchestrator is gone (wakeup is a seed-time function now).

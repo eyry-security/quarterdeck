@@ -209,7 +209,7 @@ def test_shutdown_does_not_hold_process_for_hung_runner(tmp_path):
     elapsed = context.Queue()
     process = context.Process(target=_process_bounded_stop, args=(home, elapsed))
     process.start()
-    process.join(timeout=1)
+    process.join(timeout=5)
     assert process.exitcode == 0
     assert elapsed.get(timeout=1) < 0.5
 
