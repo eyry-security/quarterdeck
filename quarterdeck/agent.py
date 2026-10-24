@@ -22,6 +22,7 @@ from .agent_files import AgentFiles
 from .agent_registry import AgentRegistry, home_dir
 from .agent_stream import post_thought, thought_stream_log
 from .chat import Chat
+from .models import resolve_model
 from .thoughts import thought_channel
 from .tools import quarterdeck_tools
 
@@ -46,7 +47,8 @@ def llm_available() -> bool:
     if os.environ.get("ANTHROPIC_API_KEY"):
         return True
     # init_chat_model also honours other providers; be permissive.
-    return any(os.environ.get(k) for k in ("OPENAI_API_KEY", "GOOGLE_API_KEY"))
+    return any(os.environ.get(k) for k in (
+        "DEEPSEEK_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"))
 
 
 class AgentRunner:
@@ -353,12 +355,12 @@ class AgentRunner:
             base += f"\nWHAT YOU REMEMBER (memory.md):\n{memory[:2000]}\n"
         return base
 
-    def _current_model(self) -> str | None:
-        """This agent's model from the registry (None = Pinnace default)."""
+    def _current_model(self) -> str:
+        """This agent's model reference, falling back to the Quarterdeck default."""
         try:
-            return self.registry.get(self.name).model
+            return resolve_model(self.registry.get(self.name).model)
         except Exception:
-            return None
+            return resolve_model(None)
 
     def sandbox(self):
         """This agent's persistent sandbox (host-mounted /work). Built lazily."""

@@ -22,17 +22,12 @@ from pydantic import BaseModel
 from .agent_files import AGENT_FILES, AgentFiles
 from .agent_registry import AgentRegistry, RegistryError
 from .chat import Chat, add_post_listener, sanitize_channel
+from .models import DEFAULT_MODELS, resolve_model
 from .thoughts import mount_thought_routes
 from .users import UserError, UserRegistry
 from .events import EventBus
 
 STATIC_DIR = Path(__file__).parent / "static"
-
-DEFAULT_MODELS = [
-    "anthropic:claude-opus-4-6",
-    "anthropic:claude-sonnet-4-6",
-    "anthropic:claude-haiku-4-5",
-]
 
 
 def available_models() -> list[str]:
@@ -415,7 +410,8 @@ def create_app(home: Path | None = None, daemon=None) -> FastAPI:
     def create_agent(body: CreateAgent):
         try:
             agent = room.registry.spawn(
-                body.name, system_prompt=body.system_prompt, model=body.model)
+                body.name, system_prompt=body.system_prompt,
+                model=resolve_model(body.model))
         except Exception as e:
             raise HTTPException(400, str(e))
         d = agent.to_dict() if hasattr(agent, "to_dict") else dict(agent)

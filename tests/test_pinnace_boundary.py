@@ -30,7 +30,7 @@ def test_default_runner_uses_config_session_root_and_closes(tmp_path, monkeypatc
     class PinnaceAgent:
         @classmethod
         def from_config(cls, config):
-            assert config["model"] is None
+            assert config["model"] == "deepseek:deepseek-flash"
             assert config["session_id"].startswith("agent-")
             assert config["session_id"] != "agent-scout"
             return cls()
@@ -52,7 +52,7 @@ def test_default_runner_uses_config_session_root_and_closes(tmp_path, monkeypatc
     agent = Agent("scout", "watch", model=None, sandbox="docker")
     summary = default_runner(agent, "check", home=tmp_path)
     assert "2 turn(s)" in summary and "done" in summary
-    assert captured["model"] is None
+    assert captured["model"] == "deepseek:deepseek-flash"
     assert captured["session_id"].startswith("agent-")
     assert captured["session_id"] != "agent-scout"
     assert captured["session_root"] == tmp_path / "pinnace"

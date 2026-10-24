@@ -486,7 +486,7 @@ async function loadAgents() {
     d.dataset.name = a.name;
     const seedMark = a.seed ? "🌱 " : "";
     const dotCls = a.thinking ? "thinking" : (a.presence === "offline" ? "offline" : (a.presence === "working" ? "working" : "online"));
-    const modelShort = (a.model || "").replace(/^anthropic:/, "").replace(/^claude-/, "") || "default";
+    const modelShort = (a.model || "").replace(/^[^:]+:/, "").replace(/^claude-/, "") || "default";
     d._agent = a.name;
     d.innerHTML = `<span class="dot ${dotCls}"></span>${seedMark}${esc(a.name)}<span class="role">${esc(a.presence)} · ${esc(modelShort)}</span>`;
     d.onclick = () => openThoughts(a.name);
@@ -675,11 +675,11 @@ async function loadModelPicker(agent) {
     const me = (agents || []).find(a => a.name === agent);
     const current = (me && me.model) || "";
     sel.innerHTML = `<option value="">default</option>` + modelCache.map(m =>
-      `<option value="${esc(m)}"${m === current ? " selected" : ""}>${esc(m.replace(/^anthropic:/, ""))}</option>`).join("");
+      `<option value="${esc(m)}"${m === current ? " selected" : ""}>${esc(m.replace(/^[^:]+:/, ""))}</option>`).join("");
     // Current model may not be in the catalog (custom) — still show it.
     if (current && !modelCache.includes(current)) {
       const o = document.createElement("option");
-      o.value = current; o.textContent = current.replace(/^anthropic:/, ""); o.selected = true;
+      o.value = current; o.textContent = current.replace(/^[^:]+:/, ""); o.selected = true;
       sel.appendChild(o);
     }
     sel.style.display = "";

@@ -27,6 +27,7 @@ from .chat import DEFAULT_CHANNEL, Chat
 from .events import RUN_COMPLETED, RUN_REQUESTED, TICK, Event, EventBus
 from .executor import DaemonExecutor
 from .locking import file_lock
+from .models import resolve_model
 
 Runner = Callable[[Agent, str], str]
 """A runner wakes an agent with a prompt and returns a summary string."""
@@ -66,7 +67,7 @@ def default_runner(agent: Agent, prompt: str, *, home: Path | None = None,
     try:
         session_root = (Path(home) if home else home_dir()) / "pinnace"
         config = AgentConfig.resolve(
-            model=agent.model,
+            model=resolve_model(agent.model),
             sandbox=sandbox,
             system_prompt=agent.system_prompt,
             max_turns=agent.max_turns,

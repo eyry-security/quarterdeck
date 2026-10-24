@@ -59,7 +59,7 @@ Spawn an agent (a name, a role, a model):
 ```bash
 quarterdeck spawn --name scout \
   --system "You watch our scope for new hosts and report anything interesting." \
-  --model anthropic:claude-opus-4-6 --sandbox docker
+  --sandbox docker
 ```
 
 Talk to the crew:
