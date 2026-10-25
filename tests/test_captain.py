@@ -47,6 +47,11 @@ class FakeSeed(FakeRunner):
         return None
 
 
+class FailingSeed(FakeSeed):
+    async def boot_room(self):
+        raise RuntimeError("seed boot failed")
+
+
 def _runtime(home: Path) -> Runtime:
     return Runtime(home, runner_cls=FakeRunner, seed_cls=FakeSeed)
 
@@ -95,6 +100,7 @@ class TestCaptainCreation:
         runtime.start(wait_ready=5)
         try:
             assert _captain_count(runtime.registry) == 1
+            assert SELF_NAME in runtime.daemon.tasks
             agent = runtime.registry.get(SELF_NAME)
             assert agent.system_prompt == SELF_SYSTEM_PROMPT
             files = runtime.files
@@ -102,6 +108,16 @@ class TestCaptainCreation:
             assert files.read(SELF_NAME, "runbook.md") == SELF_RUNBOOK
             subs = get_subscriptions(SELF_NAME, home=runtime.home)
             assert "#general" in subs["channels"]
+        finally:
+            runtime.stop()
+
+    def test_service_start_creates_captain_even_if_seed_boot_fails(self, tmp_path):
+        runtime = Runtime(tmp_path / "qd", runner_cls=FakeRunner,
+                          seed_cls=FailingSeed)
+        runtime.start(wait_ready=5)
+        try:
+            assert _captain_count(runtime.registry) == 1
+            assert SELF_NAME in runtime.daemon.tasks
         finally:
             runtime.stop()
 
