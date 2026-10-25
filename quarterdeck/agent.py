@@ -23,7 +23,7 @@ from .agent_config import (build_sandbox, require_sandbox_policy,
 from .agent_files import AgentFiles
 from .agent_registry import Agent, AgentRegistry, agent_key, home_dir
 from .agent_stream import post_thought, thought_stream_log
-from .captain import SELF_NAME
+from .captain import is_captain
 from .chat import Chat
 from .locking import file_lock
 from .models import resolve_model
@@ -455,7 +455,7 @@ class AgentRunner:
     def all_tools(self) -> list:
         tools = (quarterdeck_tools(self.name, home=self.home, daemon=self.daemon)
                  + self.file_tools())
-        if self.name.strip().lower() == SELF_NAME:
+        if is_captain(self.name):
             # The captain delegates: reuse seed's registration/wake tooling.
             from .seed import SeedRunner
             tools += [SeedRunner._register_tool(self), SeedRunner._wake_tool(self)]

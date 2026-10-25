@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .agent import AgentRunner
 from .agent_registry import AgentRegistry, home_dir
-from .captain import SELF_NAME, ensure_captain
+from .captain import ensure_captain, is_captain
 from .seed import SeedRunner
 
 HEARTBEAT_INTERVAL = 30.0
@@ -278,7 +278,7 @@ class Daemon:
                 except asyncio.CancelledError:
                     # A cancelled captain is a kill: bring it back. Other
                     # cancellations are deliberate (deregister/shutdown).
-                    if name != SELF_NAME:
+                    if not is_captain(name):
                         continue
                 except Exception:
                     pass

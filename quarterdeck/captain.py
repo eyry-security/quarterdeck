@@ -21,6 +21,11 @@ SELF_MODEL = resolve_model(None)
 SELF_SANDBOX = "docker"
 SELF_MAX_TURNS = 30
 
+
+def is_captain(name: str | None) -> bool:
+    """True for the captain's canonical name, case/space insensitive."""
+    return (name or "").strip().lower() == SELF_NAME
+
 SELF_SYSTEM_PROMPT = """\
 You are self, the captain and orchestrator of this Quarterdeck room.
 
@@ -123,6 +128,8 @@ def ensure_captain(home: Path | None = None, *,
 
     if not (agent.system_prompt or "").strip():
         agent = registry.set_system_prompt(SELF_NAME, SELF_SYSTEM_PROMPT)
+    if not (agent.model or "").strip():
+        agent = registry.set_model(SELF_NAME, SELF_MODEL)
 
     if not _read(files, SELF_NAME, "identify.md").strip():
         files.write(SELF_NAME, "identify.md", SELF_IDENTIFY)

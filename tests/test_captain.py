@@ -15,6 +15,7 @@ from quarterdeck.captain import (
     SELF_RUNBOOK,
     SELF_SYSTEM_PROMPT,
     ensure_captain,
+    is_captain,
 )
 from quarterdeck.daemon import Daemon
 from quarterdeck.models import DEFAULT_MODEL, resolve_model
@@ -72,6 +73,22 @@ class TestCaptainCreation:
         asyncio.run(seed.boot_room())
         asyncio.run(seed.boot_room())  # idempotent
         assert _captain_count(seed.registry) == 1
+        subs = get_subscriptions(SELF_NAME, home=seed.home)
+        assert "#general" in subs["channels"]
+
+    def test_existing_captain_without_model_gets_default(self, tmp_path):
+        home = tmp_path / "qd"
+        registry = AgentRegistry(home=home)
+        registry.spawn(SELF_NAME, "stale", model=None)
+        ensure_captain(home=home, registry=registry)
+        agent = registry.get(SELF_NAME)
+        assert agent.model == DEFAULT_MODEL
+
+    def test_is_captain_is_case_and_space_insensitive(self):
+        assert is_captain("self")
+        assert is_captain(" SELF ")
+        assert not is_captain("seed")
+        assert not is_captain(None)
 
     def test_service_start_creates_captain(self, tmp_path):
         runtime = _runtime(tmp_path / "qd")
