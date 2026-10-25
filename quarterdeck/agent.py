@@ -23,6 +23,7 @@ from .agent_config import (build_sandbox, require_sandbox_policy,
 from .agent_files import AgentFiles
 from .agent_registry import Agent, AgentRegistry, agent_key, home_dir
 from .agent_stream import post_thought, thought_stream_log
+from .captain import is_captain
 from .chat import Chat
 from .locking import file_lock
 from .models import resolve_model
@@ -452,8 +453,13 @@ class AgentRunner:
         return self._pinnace
 
     def all_tools(self) -> list:
-        return (quarterdeck_tools(self.name, home=self.home, daemon=self.daemon)
-                + self.file_tools())
+        tools = (quarterdeck_tools(self.name, home=self.home, daemon=self.daemon)
+                 + self.file_tools())
+        if is_captain(self.name):
+            # The captain delegates: reuse seed's registration/wake tooling.
+            from .seed import SeedRunner
+            tools += [SeedRunner._register_tool(self), SeedRunner._wake_tool(self)]
+        return tools
 
     def file_tools(self) -> list:
         """quarterdeck_memory_read/write + quarterdeck_runbook_read/update + self-maintenance."""

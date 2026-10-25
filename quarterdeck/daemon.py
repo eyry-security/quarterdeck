@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .agent import AgentRunner
 from .agent_registry import AgentRegistry, home_dir
+from .captain import ensure_captain, is_captain
 from .seed import SeedRunner
 
 HEARTBEAT_INTERVAL = 30.0
@@ -189,6 +190,12 @@ class Daemon:
             await seed.boot_room()
         except Exception as e:
             print(f"[daemon] seed boot_room failed: {e}", flush=True)
+        # The captain is present by default; ensure exactly one registry entry
+        # before the supervisor starts the room.
+        try:
+            ensure_captain(home=self.home, registry=self.registry)
+        except Exception as e:
+            print(f"[daemon] captain ensure failed: {e}", flush=True)
         self._heartbeat()
 
         # 2. Start every registered agent (except seed). Agents read any
@@ -269,7 +276,10 @@ class Daemon:
                 try:
                     task.exception()
                 except asyncio.CancelledError:
-                    continue
+                    # A cancelled captain is a kill: bring it back. Other
+                    # cancellations are deliberate (deregister/shutdown).
+                    if not is_captain(name):
+                        continue
                 except Exception:
                     pass
                 restarts = self._restarts.get(name, 0)

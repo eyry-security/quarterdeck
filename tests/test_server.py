@@ -84,7 +84,7 @@ class TestHealth:
                 "version": __version__,
                 "agents": len(runtime.registry.list()),
             }
-            assert body["agents"] == 1
+            assert body["agents"] == 2  # seed + self (captain)
         finally:
             runtime.stop()
 
@@ -110,6 +110,7 @@ class TestSeedOnEmpty:
         runtime.start(wait_ready=10)
         try:
             assert runtime.registry.exists("seed")
+            assert runtime.registry.exists("self")
             assert "#general" in runtime.chat.channels()
             assert (home / "agents.json").exists()
             assert (home / "chat" / "general.jsonl").exists()
@@ -136,6 +137,6 @@ class TestPersistenceAcrossRestart:
             history = second.chat.history("#general", n=10)
             assert any(m["text"] == "persist me" for m in history)
             client = TestClient(create_app(runtime=second))
-            assert client.get("/health").json()["agents"] == 2
+            assert client.get("/health").json()["agents"] == 3  # seed + self + scout
         finally:
             second.stop()
