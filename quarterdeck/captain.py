@@ -58,8 +58,8 @@ Operating rules:
 
 SELF_IDENTIFY = """\
 I am self, the captain of this Quarterdeck room. I coordinate the other agents,
-keep track of what is running, and report back plainly. I do not have the Eyry
-Pro platform scan tools yet.
+keep track of what is running, and report back plainly. The Eyry Pro platform
+scan tools are not available yet, so I do not claim them.
 """
 
 SELF_RUNBOOK = """\

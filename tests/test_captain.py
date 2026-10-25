@@ -152,6 +152,26 @@ class TestCaptainModelAndPersona:
         assert "not available yet" in prompt or "not wired up yet" in prompt
         assert "no buzzwords" in prompt
 
+    def test_identity_and_runbook_do_not_overclaim_platform_tools(self):
+        for text in (SELF_IDENTIFY, SELF_RUNBOOK):
+            lowered = text.lower()
+            assert "self" in lowered
+            assert "captain" in lowered
+            assert "eyry pro" in lowered
+            assert "not available yet" in lowered or "not wired up yet" in lowered
+
+    def test_first_boot_briefs_captain_only_once(self, tmp_path):
+        home = tmp_path / "qd"
+        wakeup = home / "agents" / SELF_NAME / "wakeup.json"
+        ensure_captain(home=home)
+        assert wakeup.exists()
+        briefing = wakeup.read_text(encoding="utf-8").lower()
+        assert "self, the captain" in briefing
+        assert "platform scan tools" in briefing
+        wakeup.unlink()
+        ensure_captain(home=home)  # restart: no second briefing
+        assert not wakeup.exists()
+
     def test_captain_has_delegation_tools(self, tmp_path):
         runner = AgentRunner(SELF_NAME, home=tmp_path / "qd")
         names = {tool.name for tool in runner.all_tools()}
