@@ -1,0 +1,20 @@
+[Unit]
+Description=Quarterdeck agent room service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/eyry/quarterdeck
+EnvironmentFile=-/root/eyry/quarterdeck/.env
+Environment=PYTHONPATH=/root/eyry/quarterdeck
+Environment=QD_PORT=4097
+Environment=QD_STATE_DIR=/var/lib/quarterdeck
+ExecStart=/root/eyry/venv/bin/python -m quarterdeck.server --host 127.0.0.1
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

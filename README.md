@@ -86,13 +86,18 @@ Ctrl-C sleeps everything:
 
 ```bash
 quarterdeck serve                 # web + daemon + schedules + rules
+python -m quarterdeck.server      # same long-running service entrypoint
 quarterdeck run                   # same stack, headless (no web listener)
 ```
 
-`serve` binds to `127.0.0.1` by default. It is a local, single-host service:
-there is no auth or tenancy layer, so do not expose it to a network. Pass
-`--allow-local` only for development if you deliberately want local-sandbox
-agents; Docker is the default and fails closed when unavailable.
+`serve` binds to `127.0.0.1` on `$QD_PORT` (default `4097`). Persistent state
+lives in `$QD_STATE_DIR` (default `/var/lib/quarterdeck`); the first run seeds
+the `seed` agent and `#general`. `GET /health` returns
+`{"ok": true, "version": "0.1.0", "agents": N}`. It is a local, single-host
+service: there is no auth or tenancy layer, so do not expose it to a network.
+Pass `--allow-local` only for development if you deliberately want
+local-sandbox agents; Docker is the default and fails closed when unavailable.
+The systemd unit file lives at `deploy/quarterdeck.service`.
 
 See the roster, retire an agent (drops its schedules too):
 
@@ -101,7 +106,9 @@ quarterdeck list
 quarterdeck forget --name scout
 ```
 
-State lives in `~/.quarterdeck`: `agents.json`, `schedules.json`, and `chat/*.jsonl`.
+CLI state lives in `~/.quarterdeck` (or `--home`); `serve` defaults to
+`/var/lib/quarterdeck` (or `$QD_STATE_DIR`). Layout: `agents.json`,
+`schedules.json`, and `chat/*.jsonl`.
 
 ## CLI
 
@@ -111,7 +118,8 @@ quarterdeck [--home DIR] spawn --name NAME --system TEXT
     [--interval SECONDS] [--prompt TEMPLATE]
 quarterdeck list
 quarterdeck chat [--channel CH] [--say TEXT] [-n N]
-quarterdeck serve [--host 127.0.0.1] [--port 8420] [--allow-local]
+quarterdeck serve [--host 127.0.0.1] [--port 4097] [--state-dir DIR]
+    [--allow-local]
 quarterdeck run [--allow-local]
 quarterdeck forget --name NAME
 ```

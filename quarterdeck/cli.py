@@ -116,9 +116,13 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--allow-local", action="store_true")
 
     serve = sub.add_parser("serve", help="run the unified webchat + agent service")
-    serve.add_argument("--port", type=int, default=8420)
+    serve.add_argument("--port", type=int, default=None,
+                       help="bind port (default: $QD_PORT or 4097)")
     serve.add_argument("--host", default="127.0.0.1",
                        help="bind address (default: loopback only)")
+    serve.add_argument("--state-dir", default=None,
+                       help="state dir (default: $QD_STATE_DIR or "
+                            "/var/lib/quarterdeck)")
     serve.add_argument("--agents", action="store_true",
                        help="backward-compatible no-op: the daemon always runs")
     serve.add_argument("--allow-local", action="store_true",
@@ -337,23 +341,19 @@ def cmd_ingest_aplomado(args) -> int:
 
 def cmd_serve(args) -> int:
     """Run the one service: web + daemon + schedules + rules + ChatOps."""
-    from .web import create_app
-    import uvicorn
+    from .server import run
 
-    runtime = Runtime(
-        _resolve_home(args), allow_local=getattr(args, "allow_local", False)
-    )
-    runtime.start()
-    print(
-        f"[quarterdeck] service up: {len(runtime.scheduler.list())} schedule(s), "
-        f"{len(runtime.registry.list())} agent(s)",
-        flush=True,
-    )
+    state_dir = getattr(args, "state_dir", None) or args.home
     try:
-        uvicorn.run(create_app(runtime=runtime), host=args.host, port=args.port)
-    finally:
-        runtime.stop()
-    return 0
+        return run(
+            host=args.host,
+            port=args.port,
+            state_dir=state_dir,
+            allow_local=getattr(args, "allow_local", False),
+        )
+    except ValueError as exc:
+        _log(f"error: {exc}")
+        return 2
 
 
 _DISPATCH = {

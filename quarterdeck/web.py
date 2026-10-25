@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import __version__
 from .agent_files import AGENT_FILES, AgentFiles
 from .agent_registry import AgentRegistry, RegistryError
 from .chat import Chat, add_post_listener, sanitize_channel
@@ -223,6 +224,14 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
     room = Room(home=home, daemon=daemon, runtime=runtime, bus=bus, chat=chat,
                 registry=registry)
     app = FastAPI(title="Quarterdeck")
+
+    @app.get("/health")
+    def health():
+        try:
+            agents = len(room.registry.list())
+        except Exception:
+            agents = 0
+        return {"ok": True, "version": __version__, "agents": agents}
 
     @app.get("/api/channels")
     def list_channels():
@@ -493,12 +502,20 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    @app.get("/")
-    def index():
+    def _index_response():
         idx = STATIC_DIR / "index.html"
         if not idx.exists():
             return JSONResponse({"ok": True, "hint": "static UI not built yet"})
         return FileResponse(str(idx))
+
+    @app.get("/")
+    def index():
+        return _index_response()
+
+    @app.get("/agents/room")
+    def agents_room():
+        """Compatibility alias for Eyry Pro's embedded room iframe."""
+        return _index_response()
 
     # Thought streams (agent monologues)
     mount_thought_routes(app, room)
