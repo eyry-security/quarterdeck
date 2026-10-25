@@ -110,6 +110,13 @@ class SeedRunner(AgentRunner):
                 self.files.write("seed", "runbook.md", SEED_RUNBOOK)
         except Exception:
             pass
+        # The captain is default furniture: ensure exactly one exists.
+        try:
+            from .captain import ensure_captain
+            ensure_captain(home=self.home, registry=self.registry,
+                           files=self.files)
+        except Exception as e:
+            self._note(f"captain ensure failed: {e}")
 
     # ------------------------------------------------------------------
     # tools: quarterdeck_register_agent
@@ -154,7 +161,7 @@ class SeedRunner(AgentRunner):
                 self.files.write(target, "runbook.md", rb_text)
                 if persistence in ("full", "simple"):
                     self.files.write(target, "memory.md",
-                                     f"# {target}\n\nBorn {time.strftime('%Y-%m-%d %H:%M')} — registered by seed.\n")
+                                     f"# {target}\n\nBorn {time.strftime('%Y-%m-%d %H:%M')} — registered by {self.name}.\n")
             except Exception as e:
                 return f"error: files: {e}"
             # Spawn-time wakeup prompt (mechanical template, no LLM).

@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from .agent import AgentRunner
+from .agent_files import AgentFiles
 from .agent_registry import AgentRegistry, home_dir
 from .chat import Chat
 from .chatops import ChatOps
@@ -46,6 +47,7 @@ class Runtime:
         self.home.mkdir(parents=True, exist_ok=True)
         self.allow_local = allow_local
         self.registry = AgentRegistry(home=self.home)
+        self.files = AgentFiles(home=self.home)
         self.bus = EventBus(store=EventStore(self.home))
         self.chat = Chat(home=self.home, bus=self.bus)
         self.scheduler = scheduler or Scheduler(

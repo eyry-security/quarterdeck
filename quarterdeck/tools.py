@@ -17,6 +17,7 @@ from langchain_core.tools import StructuredTool
 
 from . import subscriptions
 from .agent_registry import AgentRegistry
+from .captain import SELF_NAME
 from .chat import Chat, sanitize_channel
 from .thoughts import thought_channel
 
@@ -309,8 +310,8 @@ def quarterdeck_tools(agent_name: str, home: Path | None = None,
             qd_reset_env,
         ),
     ]
-    # Seed-only: manage other agents' models.
-    if me.strip().lower() == "seed":
+    # Seed and captain: manage other agents' models and lifecycle.
+    if me.strip().lower() in ("seed", SELF_NAME):
         tools.append(
             _make_tool(
                 "quarterdeck_set_agent_model",
