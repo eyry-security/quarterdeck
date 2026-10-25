@@ -174,7 +174,7 @@ header .sub { color: var(--muted); font-size: 13px; }
 /* Thoughts collapse by default: preview line + expand toggle. */
 .msg.thought .t-full { display: none; }
 .msg.thought.expanded .t-full { display: block; }
-.msg.thought .t-sep { border-top: 1px dashed rgba(155, 92, 255, 0.25); margin: 6px 0; }
+.msg.thought .t-sep { border-top: 1px dashed rgba(167, 139, 250, 0.26); margin: 6px 0; }
 .msg.thought.expanded .t-preview { display: none; }
 .msg.thought .t-toggle {
   background: none; border: none; cursor: pointer;
@@ -182,15 +182,15 @@ header .sub { color: var(--muted); font-size: 13px; }
   padding: 2px 6px; margin-left: 6px; border-radius: 4px;
   font-family: var(--mono); white-space: nowrap;
 }
-.msg.thought .t-toggle:hover { background: rgba(155, 92, 255, 0.15); }
+.msg.thought .t-toggle:hover { background: rgba(167, 139, 250, 0.18); }
 .msg.thought .t-text { cursor: pointer; }
 /* Tool calls in the thought stream: monospace, amber accent. */
 .msg.thought .t-seg.toolcall {
   font-family: var(--mono);
   font-style: normal;
   font-size: 12px;
-  background: rgba(255, 170, 60, 0.07);
-  border-left: 2px solid rgba(255, 170, 60, 0.5);
+  background: rgba(251, 191, 36, 0.08);
+  border-left: 2px solid rgba(251, 191, 36, 0.5);
   padding: 4px 8px;
   margin: 4px 0;
   border-radius: 0 4px 4px 0;
@@ -822,9 +822,13 @@ header .sub { color: var(--dim); font-size: 12.5px; }
 }
 #send:hover { filter: brightness(1.09) saturate(1.05); }
 #send:active { transform: scale(0.95); }
-#input:focus-visible, #send:focus-visible, #sidebar-toggle:focus-visible {
-  outline: 2px solid rgba(147, 197, 253, 0.8);
+#input:focus-visible, #send:focus-visible, #sidebar-toggle:focus-visible,
+button:focus-visible, select:focus-visible, textarea:focus-visible,
+input:focus-visible, a:focus-visible, [role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid rgba(196, 181, 253, 0.95);
   outline-offset: 3px;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.45), 0 0 18px rgba(139, 92, 246, 0.45);
 }
 .sys { color: var(--dim); font-style: normal; font-size: 12px; }
 
