@@ -539,7 +539,15 @@ header .logo .logo-short { display: none; }
   color: #fff;
 }
 .chan .hash { color: var(--dim); }
-.agent .role { color: var(--dim); }
+.agent { min-width: 0; white-space: nowrap; }
+.agent .role {
+  color: var(--dim);
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 #add-chan {
   margin: 10px 12px 14px;
   border: 1px dashed rgba(255, 255, 255, 0.18);
