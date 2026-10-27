@@ -360,8 +360,11 @@ def platform_tools(agent_name: str, home=None, client=None) -> list:
             findings = [f for f in findings
                         if host_filter in str(f.get("host", "")).lower()]
         total = len(findings)
-        start = max(0, int(offset))
-        count = max(1, min(int(limit), 200))
+        try:
+            start = max(0, _as_int(offset, "offset"))
+            count = max(1, min(_as_int(limit, "limit"), 200))
+        except Exception as exc:  # noqa: BLE001
+            return f"error: {exc}"
         page = findings[start:start + count]
         if not page:
             return f"{label}: no findings match"

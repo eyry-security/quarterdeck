@@ -358,3 +358,10 @@ def test_pro_client_surfaces_http_detail(monkeypatch):
         client.start_scan(1)
     assert "409" in str(exc.value)
     assert "already running" in str(exc.value)
+
+
+def test_list_findings_bad_pagination_is_readable(tools):
+    # Raw function call: LangChain's own schema rejects a non-integer first.
+    out = tools["list_findings"].func(limit="not-a-number")
+    assert out.startswith("error:")
+    assert "Traceback" not in out
