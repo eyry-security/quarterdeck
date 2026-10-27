@@ -427,6 +427,8 @@ header .logo {
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 header .sub { color: var(--dim); font-size: 12.5px; }
+header .logo .logo-short { display: none; }
+#usage-widget .u-compact { display: none; }
 #sidebar-toggle {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-pill);
@@ -895,6 +897,13 @@ input:focus-visible, a:focus-visible, [role="button"]:focus-visible,
   #send { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
 }
 
+@media (max-width: 640px) {
+  header .logo .logo-full { display: none; }
+  header .logo .logo-short { display: inline; }
+  #usage-widget .u-full { display: none; }
+  #usage-widget .u-compact { display: inline; }
+}
+
 @media (prefers-reduced-transparency: reduce) {
   :root {
     --glass-bg: rgba(13, 18, 30, 0.95);
@@ -932,7 +941,7 @@ input:focus-visible, a:focus-visible, [role="button"]:focus-visible,
 <body>
 <header>
   <button id="sidebar-toggle" type="button" aria-label="Toggle agents and channels" aria-controls="sidebar" aria-expanded="false">☰</button>
-  <div class="logo">QUARTERDECK</div>
+  <div class="logo"><span class="logo-full">QUARTERDECK</span><span class="logo-short">QD</span></div>
   <div class="sub">Eyry agent room — persistent agents, live channels</div>
   <div id="usage-widget" title="Token usage — click for breakdown">
     <span id="usage-summary">…</span>
@@ -1552,11 +1561,12 @@ async function loadUsage() {
       txt += ` · ~${fmtEta(eta.eta_hours)} left`;
       if (eta.eta_hours < 2) cls = "crit";
       else if (eta.eta_hours < 8) cls = "warn";
-    } else if (eta.credit_balance_usd == null) {
-      txt += " · set credit balance";
     }
+    const bal = eta.credit_balance_usd;
+    const compact = `\u{1F525} ${bal != null ? fmtUsd(bal) : "$0.00"}`;
     const w = $("#usage-summary");
-    w.innerHTML = `<span class="${cls}">${esc(txt)}</span>`;
+    w.innerHTML = `<span class="u-full ${cls}">${esc(txt)}</span>` +
+      `<span class="u-compact ${cls}">${esc(compact)}</span>`;
     w.dataset.full = JSON.stringify(u);
   } catch { $("#usage-summary").textContent = "usage n/a"; }
 }
