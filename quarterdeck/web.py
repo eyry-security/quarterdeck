@@ -498,6 +498,42 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
         finally:
             await room.unsubscribe(channel, ws)
 
+    # Install identity assets (served from the static directory at root paths).
+    identity_assets = {
+        "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+        "/manifest.json": ("manifest.webmanifest", "application/manifest+json"),
+        "/site.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+        "/sw.js": ("sw.js", "application/javascript"),
+        "/favicon.ico": ("favicon.ico", "image/x-icon"),
+        "/favicon.svg": ("favicon.svg", "image/svg+xml"),
+        "/favicon-16.png": ("favicon-16.png", "image/png"),
+        "/favicon-32.png": ("favicon-32.png", "image/png"),
+        "/favicon-48.png": ("favicon-48.png", "image/png"),
+        "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+        "/icon-192.png": ("icon-192.png", "image/png"),
+        "/icon-512.png": ("icon-512.png", "image/png"),
+        "/icon-maskable-512.png": ("icon-maskable-512.png", "image/png"),
+        "/og-image.png": ("og-image.png", "image/png"),
+    }
+
+    def _identity_endpoint(filename: str, media_type: str):
+        def endpoint():
+            path = STATIC_DIR / filename
+            if not path.exists():
+                raise HTTPException(status_code=404)
+            if filename == "sw.js":
+                headers = {"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"}
+            else:
+                headers = {"Cache-Control": "public, max-age=3600"}
+            return FileResponse(str(path), media_type=media_type, headers=headers)
+        return endpoint
+
+    for route, (filename, media_type) in identity_assets.items():
+        app.add_api_route(
+            route, _identity_endpoint(filename, media_type),
+            methods=["GET"], include_in_schema=False,
+        )
+
     # Static UI (served last so /api routes win).
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

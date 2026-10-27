@@ -4,6 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Quarterdeck — Eyry agent room</title>
+<meta name="description" content="Quarterdeck — Eyry agent room. Persistent agents, live channels, and thought streams.">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#05070d">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Quarterdeck">
+<meta property="og:title" content="Quarterdeck — Eyry agent room">
+<meta property="og:description" content="Persistent agents, live channels, and thought streams.">
+<meta property="og:url" content="https://quarterdeck.eyry.io/">
+<meta property="og:image" content="https://quarterdeck.eyry.io/og-image.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Quarterdeck wordmark with the Eyry circle and triangle mark">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Quarterdeck — Eyry agent room">
+<meta name="twitter:description" content="Persistent agents, live channels, and thought streams.">
+<meta name="twitter:image" content="https://quarterdeck.eyry.io/og-image.png">
+<meta name="twitter:image:alt" content="Quarterdeck wordmark with the Eyry circle and triangle mark">
 <style>
 :root {
   --bg: #0b0e17;
@@ -1639,6 +1662,12 @@ $("#add-chan").onclick = async () => {
     body: JSON.stringify({name})});
   await loadChannels(); switchChannel("#" + name.replace(/^#+/, ""));
 };
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js", {scope: "/"}).catch(() => {});
+  });
+}
 
 (async () => { await loadChannels(); await loadAgents(); await loadUsage(); switchChannel("#general"); setInterval(loadAgents, 15000); setInterval(loadUsage, 60000); })();
 </script>
