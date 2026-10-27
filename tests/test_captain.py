@@ -165,16 +165,20 @@ class TestCaptainModelAndPersona:
         assert "orchestrator" in prompt
         assert "self" in prompt
         assert "eyry pro" in prompt
-        assert "not available yet" in prompt or "not wired up yet" in prompt
+        assert "platform tools" in prompt
+        assert "confirm before destructive" in prompt
         assert "no buzzwords" in prompt
 
-    def test_identity_and_runbook_do_not_overclaim_platform_tools(self):
+    def test_identity_and_runbook_describe_platform_tools(self):
         for text in (SELF_IDENTIFY, SELF_RUNBOOK):
             lowered = text.lower()
             assert "self" in lowered
             assert "captain" in lowered
             assert "eyry pro" in lowered
-            assert "not available yet" in lowered or "not wired up yet" in lowered
+            assert "platform" in lowered
+            assert "tool" in lowered
+            assert "not available yet" not in lowered
+            assert "not wired up yet" not in lowered
 
     def test_first_boot_briefs_captain_only_once(self, tmp_path):
         home = tmp_path / "qd"
@@ -183,23 +187,35 @@ class TestCaptainModelAndPersona:
         assert wakeup.exists()
         briefing = wakeup.read_text(encoding="utf-8").lower()
         assert "self, the captain" in briefing
-        assert "platform scan tools" in briefing
+        assert "platform" in briefing
         wakeup.unlink()
         ensure_captain(home=home)  # restart: no second briefing
         assert not wakeup.exists()
 
-    def test_captain_has_delegation_tools(self, tmp_path):
+    def test_captain_has_delegation_and_platform_tools(self, tmp_path):
         runner = AgentRunner(SELF_NAME, home=tmp_path / "qd")
         names = {tool.name for tool in runner.all_tools()}
         for expected in ("quarterdeck_register_agent", "quarterdeck_wake",
-                         "quarterdeck_dm", "quarterdeck_list"):
+                         "quarterdeck_dm", "quarterdeck_list",
+                         "list_scopes", "list_hosts", "scan_status",
+                         "list_findings", "get_finding", "start_scan",
+                         "list_schedules", "set_schedule", "recheck_finding",
+                         "resolve_finding", "reopen_finding",
+                         "mark_informative", "unmark_informative"):
             assert expected in names
 
-    def test_regular_agents_do_not_get_captain_management_tools(self, tmp_path):
+    def test_regular_agents_do_not_get_captain_or_platform_tools(self, tmp_path):
         runner = AgentRunner("scout", home=tmp_path / "qd")
         names = {tool.name for tool in runner.all_tools()}
         assert "quarterdeck_register_agent" not in names
         assert "quarterdeck_wake" not in names
+        for platform_tool in ("list_scopes", "list_hosts", "scan_status",
+                              "list_findings", "get_finding", "start_scan",
+                              "list_schedules", "set_schedule",
+                              "recheck_finding", "resolve_finding",
+                              "reopen_finding", "mark_informative",
+                              "unmark_informative"):
+            assert platform_tool not in names
 
 
 class TestCaptainRespawn:
