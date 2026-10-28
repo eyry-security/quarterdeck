@@ -23,7 +23,9 @@ from . import __version__
 from .agent_files import AGENT_FILES, AgentFiles
 from .auth import AuthError, AuthGate, AuthSettings
 from .agent_registry import AgentRegistry, RegistryError
-from .chat import Chat, add_post_listener, sanitize_channel
+from .chat import Chat, add_post_listener, message_id, sanitize_channel
+from .conversations import build_conversations
+from .groups import GroupStore
 from .models import DEFAULT_MODELS, resolve_model
 from .thoughts import mount_thought_routes
 from .users import UserError, UserRegistry
@@ -47,6 +49,26 @@ class PostMessage(BaseModel):
 
 class CreateChannel(BaseModel):
     name: str
+    members: list[str] | None = None
+
+
+class CreateGroup(BaseModel):
+    name: str
+    members: list[str] = []
+
+
+class UpdateGroup(BaseModel):
+    name: str | None = None
+    members: list[str] | None = None
+    archived: bool | None = None
+
+
+class UpdateMembers(BaseModel):
+    members: list[str] = []
+
+
+class LeaveGroup(BaseModel):
+    member: str | None = None
 
 
 class CreateAgent(BaseModel):
@@ -142,6 +164,7 @@ class Room:
         self.bus = bus or EventBus()
         self.chat = chat or Chat(home=home, bus=self.bus)
         self.registry = registry or AgentRegistry(home=home)
+        self.groups = GroupStore(home=self.chat.home)
         self.users = UserRegistry(home=self.chat.home)
         self.files = AgentFiles(home=self.chat.home)
         self.daemon = daemon
@@ -174,10 +197,13 @@ class Room:
         except Exception:
             return False
 
-    def wake_mentioned(self, text: str) -> None:
-        """Wake any registered agent @mentioned in text."""
+    def wake_mentioned(self, text: str) -> list[str]:
+        """Wake any registered agent @mentioned in text; return their names."""
+        woken = []
         for name in set(re.findall(r"@([A-Za-z0-9_-]+)", text or "")):
             self.wake_agent(name, "mention")
+            woken.append(name)
+        return woken
 
     def wake_subscribers(self, channel: str) -> None:
         """Wake every agent subscribed to this channel — any message wakes."""
@@ -240,8 +266,46 @@ class Room:
         """
         msg = self.post(channel, author, text, cid=cid)
         self.wake_mentioned(text)
-        self.wake_subscribers(sanitize_channel(channel))
+        # Group chats are mention-driven until channel monitoring lands: only
+        # the agents named in the message wake, not every group member.
+        if not self.groups.is_group(sanitize_channel(channel)):
+            self.wake_subscribers(sanitize_channel(channel))
         return msg
+
+    def agent_states(self) -> list[dict]:
+        """Agents plus live presence/thinking state for lists and chats."""
+        alive: set[str] = set()
+        try:
+            hb_file = self.registry.home / "daemon.json"
+            if hb_file.exists():
+                hb = json.loads(hb_file.read_text(encoding="utf-8"))
+                now = time.time()
+                alive = {n for n, ts in hb.get("agents", {}).items()
+                         if now - float(ts) < 90}
+        except Exception:
+            alive = set()
+        thinking = set()
+        try:
+            dmn = self.daemon
+            if dmn is not None:
+                for rn, runner in list(getattr(dmn, "runners", {}).items()):
+                    if getattr(runner, "_thinking", False):
+                        thinking.add(rn)
+        except Exception:
+            pass
+        agents = []
+        for a in self.registry.list():
+            d = a.to_dict() if hasattr(a, "to_dict") else dict(a)
+            name = d.get("name", "")
+            if name in alive:
+                d["presence"] = "working" if d.get("state") == "working" else "online"
+            else:
+                d["presence"] = "offline"
+            d["thinking"] = name in thinking
+            if name == "seed":
+                d["seed"] = True
+            agents.append(d)
+        return agents
 
 
 def create_app(home: Path | None = None, daemon=None, *, runtime=None,
@@ -318,17 +382,125 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
         response.delete_cookie(gate.settings.cookie_name, path="/")
         return {"authenticated": False}
 
+    def _create_group(name: str, members: list[str] | None) -> dict:
+        taken = set(room.chat.channels()) | set(room.groups.channels())
+        group = room.groups.create(
+            name, members, created_by="operator", taken=taken)
+        # Materialize the log so the group appears in channel listings even
+        # before its first message.
+        room.chat.ensure_channel(group["channel"])
+        return group
+
+    def _member_rows(channel: str) -> list[dict]:
+        channel = sanitize_channel(channel)
+        agents = room.agent_states()
+        for row in build_conversations(
+                chat=room.chat, groups=room.groups, agents=agents,
+                include_archived=True):
+            if row["channel"] == channel:
+                return row["members"]
+        return []
+
     @app.get("/api/channels")
     def list_channels():
-        return {"channels": room.chat.channels()}
+        channels = set(room.chat.channels()) | set(room.groups.channels())
+        return {"channels": sorted(channels)}
 
     @app.post("/api/channels")
     def create_channel(body: CreateChannel):
-        name = sanitize_channel(body.name)
-        # Creating = posting nothing; just validate + ensure it shows up.
-        # We materialize by touching history (empty list is fine).
-        room.chat.history(name, n=1)
-        return {"channel": name}
+        if body.members is not None:
+            return _create_group(body.name, body.members)
+        return {"channel": room.chat.ensure_channel(body.name)}
+
+    @app.get("/api/conversations")
+    def list_conversations(include_archived: bool = False):
+        return {"conversations": build_conversations(
+            chat=room.chat, groups=room.groups,
+            agents=room.agent_states(),
+            include_archived=include_archived)}
+
+    @app.post("/api/conversations/{channel}/read")
+    def read_conversation(channel: str):
+        channel = sanitize_channel(channel)
+        history = room.chat.history(channel, n=1)
+        room.groups.mark_read(
+            channel, message_id(history[-1]) if history else None)
+        return {"channel": channel, "unread": 0}
+
+    @app.post("/api/conversations/{channel}/archive")
+    def archive_conversation(channel: str, archived: bool = True):
+        channel = sanitize_channel(channel)
+        room.groups.archive(channel, archived)
+        return {"channel": channel, "archived": archived}
+
+    @app.get("/api/groups")
+    def list_groups(include_archived: bool = True):
+        groups = list(room.groups.list().values())
+        if not include_archived:
+            groups = [g for g in groups if not g.get("archived")]
+        return {"groups": groups}
+
+    @app.post("/api/groups")
+    def create_group(body: CreateGroup):
+        return _create_group(body.name, body.members)
+
+    @app.get("/api/groups/{channel}")
+    def get_group(channel: str):
+        group = room.groups.get(channel)
+        if group is None:
+            raise HTTPException(404, "unknown group")
+        return group
+
+    @app.patch("/api/groups/{channel}")
+    def update_group(channel: str, body: UpdateGroup):
+        try:
+            group = room.groups.update(
+                channel, name=body.name, members=body.members,
+                archived=body.archived)
+        except KeyError as e:
+            raise HTTPException(404, str(e))
+        if body.members is not None:
+            room.chat.ensure_channel(group["channel"])
+        return group
+
+    @app.post("/api/groups/{channel}/archive")
+    def archive_group(channel: str, archived: bool = True):
+        channel = sanitize_channel(channel)
+        room.groups.archive(channel, archived)
+        return {"channel": channel, "archived": archived}
+
+    @app.post("/api/groups/{channel}/leave")
+    def leave_group(channel: str, body: LeaveGroup | None = None):
+        channel = sanitize_channel(channel)
+        if room.groups.get(channel) is None:
+            raise HTTPException(404, "unknown group")
+        if body and body.member:
+            return room.groups.remove_member(channel, body.member)
+        room.groups.archive(channel, True)
+        return {"channel": channel, "left": True}
+
+    @app.get("/api/channels/{channel}/members")
+    def get_channel_members(channel: str):
+        channel = sanitize_channel(channel)
+        return {"channel": channel, "members": _member_rows(channel)}
+
+    @app.post("/api/channels/{channel}/members")
+    def add_channel_members(channel: str, body: UpdateMembers):
+        channel = sanitize_channel(channel)
+        if room.groups.get(channel) is None:
+            _create_group(channel.lstrip("#"), body.members)
+        else:
+            room.groups.add_members(channel, body.members)
+        return {"channel": channel, "members": _member_rows(channel)}
+
+    @app.delete("/api/channels/{channel}/members/{name}")
+    def remove_channel_member(channel: str, name: str):
+        channel = sanitize_channel(channel)
+        try:
+            room.groups.remove_member(channel, name)
+        except KeyError as e:
+            raise HTTPException(404, str(e))
+        return {"channel": channel, "members": _member_rows(channel)}
 
     @app.get("/api/channels/{channel}/messages")
     def get_messages(channel: str, n: int = 50):
@@ -339,8 +511,10 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
     async def post_message(channel: str, body: PostMessage, request: Request):
         author = _author_for(request, body.author)
         try:
-            room.users.ensure(author)
-        except UserError as e:
+            # Agent authors are already registered in the agent registry.
+            if not room.registry.exists(author):
+                room.users.ensure(author)
+        except (UserError, RegistryError) as e:
             raise HTTPException(400, str(e))
         try:
             msg = room.handle_post(channel, author, body.text, cid=body.cid)
@@ -354,8 +528,9 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
     async def send_dm(body: DM, request: Request):
         sender = _author_for(request, body.sender)
         try:
-            room.users.ensure(sender)
-        except UserError as e:
+            if not room.registry.exists(sender):
+                room.users.ensure(sender)
+        except (UserError, RegistryError) as e:
             raise HTTPException(400, str(e))
         channel = dm_channel(sender, body.recipient)
         msg = room.post(channel, sender, f"(dm) {body.text}", cid=body.cid)
@@ -393,41 +568,7 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
 
     @app.get("/api/agents")
     def list_agents():
-        # Daemon heartbeat: agents the daemon actually has alive right now.
-        alive: set[str] = set()
-        try:
-            import json as _json, time as _time
-            hb_file = room.registry.home / "daemon.json"
-            if hb_file.exists():
-                hb = _json.loads(hb_file.read_text(encoding="utf-8"))
-                now = _time.time()
-                alive = {n for n, ts in hb.get("agents", {}).items()
-                         if now - float(ts) < 90}
-        except Exception:
-            alive = set()
-        agents = []
-        # Thinking state from live runners (thread-safe attribute read).
-        thinking = set()
-        try:
-            dmn = room.daemon
-            if dmn is not None:
-                for rn, runner in list(getattr(dmn, "runners", {}).items()):
-                    if getattr(runner, "_thinking", False):
-                        thinking.add(rn)
-        except Exception:
-            pass
-        for a in room.registry.list():
-            d = a.to_dict() if hasattr(a, "to_dict") else dict(a)
-            name = d.get("name", "")
-            if name in alive:
-                d["presence"] = "working" if d.get("state") == "working" else "online"
-            else:
-                d["presence"] = "offline"
-            d["thinking"] = name in thinking
-            if name == "seed":
-                d["seed"] = True
-            agents.append(d)
-        return {"agents": agents}
+        return {"agents": room.agent_states()}
 
     @app.get("/api/models")
     def list_models():
