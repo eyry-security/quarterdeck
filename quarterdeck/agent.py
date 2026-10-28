@@ -27,6 +27,7 @@ from .captain import is_captain
 from .chat import Chat
 from .locking import file_lock
 from .models import resolve_model
+from .monitoring import take_wake_context
 from .thoughts import thought_channel
 from .tools import quarterdeck_tools
 
@@ -180,6 +181,7 @@ class AgentRunner:
         if prompt:
             await self._act(f"RE-WAKE\n\n{prompt}")
             return
+        monitor_items = take_wake_context(self.home, self.name)
         # 2. Direct messages — highest priority. A DM always wakes the agent;
         #    no @mention needed.
         dms = self._check_dms()
@@ -188,7 +190,7 @@ class AgentRunner:
         # 4. Any other message in subscribed channels — buffered for credit
         #    efficiency (batched into fewer LLM turns, see _obs_ready).
         new_activity = self._check_activity()
-        must_act = bool(dms or inbox or self._obs_ready())
+        must_act = bool(dms or inbox or self._obs_ready() or monitor_items)
         if new_activity and not must_act:
             # Cheap visibility: the agent "sees" it without burning an LLM call.
             self._note(
@@ -209,6 +211,8 @@ class AgentRunner:
                 "Never post DM replies to #general or any public channel.\n\n" + dms)
         if inbox:
             context_parts.append("MENTIONS / KEYWORD HITS\n\n" + inbox)
+        if monitor_items:
+            context_parts.append(self._format_monitor_context(monitor_items))
         if self._pending_obs:
             lines = "\n".join(
                 f"[{o['channel']}] <{o['author']}> {o['text'][:300]}"
@@ -220,6 +224,38 @@ class AgentRunner:
                 "add for the room; otherwise reply with exactly: IDLE\n\n" + lines)
             self._pending_obs.clear()
         await self._act("\n\n".join(context_parts))
+
+    def _format_monitor_context(self, items: list[dict]) -> str:
+        lines = [
+            "MONITORED CHANNEL WAKE — the service woke you because a channel "
+            "you monitor needs attention.",
+        ]
+        channels: list[str] = []
+        for item in items:
+            channel = str(item.get("channel") or "")
+            trigger = str(item.get("trigger") or "message")
+            author = str(item.get("author") or "?")
+            text = str(item.get("text") or "").strip()
+            if channel and channel not in channels:
+                channels.append(channel)
+            lines.append(f"- [{channel}] {trigger} from <{author}>: {text[:500]}")
+        for channel in channels[:5]:
+            try:
+                recent = self.chat.history(channel, n=8)
+            except Exception:
+                recent = []
+            if not recent:
+                continue
+            lines.append(f"\nRECENT CONTEXT {channel}:")
+            lines.extend(
+                f"[{m.get('author')}] {str(m.get('text', ''))[:300]}"
+                for m in recent
+            )
+        lines.append(
+            "\nRead the context, then respond, delegate with your tools, or "
+            "stay silent. Bias to silence: no acknowledgement unless you will act."
+        )
+        return "\n".join(lines)
 
     def _check_mentions(self) -> str:
         try:
