@@ -597,11 +597,14 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
         "/favicon-16.png": ("favicon-16.png", "image/png"),
         "/favicon-32.png": ("favicon-32.png", "image/png"),
         "/favicon-48.png": ("favicon-48.png", "image/png"),
+        "/favicon-256.png": ("favicon-256.png", "image/png"),
         "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
         "/icon-192.png": ("icon-192.png", "image/png"),
         "/icon-512.png": ("icon-512.png", "image/png"),
+        "/icon-maskable-192.png": ("icon-maskable-192.png", "image/png"),
         "/icon-maskable-512.png": ("icon-maskable-512.png", "image/png"),
         "/og-image.png": ("og-image.png", "image/png"),
+        "/offline.html": ("offline.html", "text/html"),
     }
 
     def _identity_endpoint(filename: str, media_type: str):
