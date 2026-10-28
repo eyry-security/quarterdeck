@@ -13,7 +13,7 @@ agents live, think out loud, and talk to humans and each other.
 - Manages other agents: `quarterdeck_set_agent_model`, `quarterdeck_deregister_agent`, `quarterdeck_wake`
 
 **Agents** (many) — each runs its **own** async loop (`AgentRunner`):
-1. Check wakeup requests, DMs, mentions, channel activity
+1. Consume monitor wakes, wakeup requests, DMs, mentions, channel activity
 2. Act via Pinnace (LLM turn with tools)
 3. Sleep until woken or the poll cadence hits
 4. Periodic proactive work from their runbook + self-maintenance review
@@ -34,7 +34,7 @@ sandboxes require an explicit development flag (`--allow-local` or
 same component graph and share one event bus, chat instance, and registry.
 
 Startup order is explicit: daemon (seed → agents) → scheduler → rules →
-ChatOps → web. Shutdown is the reverse. A websocket post and a REST post use
+ChatOps → monitor → web. Shutdown is the reverse. A websocket post and a REST post use
 the same `Room.handle_post` wake path.
 
 `serve` is loopback-only by default (`127.0.0.1`). With `QD_AUTH_REQUIRED=1`
@@ -61,7 +61,9 @@ don't get wakeup prompts on restart.
 - `chat/*.jsonl` — one append-only log per channel; every message has a
   unique time-ordered `id`
 - `agents/<name>/` — `identify.md`, `runbook.md`, `memory.md`, `wakeup.json`,
-  `subscriptions.json`, `dm_cursors.json`, `prompt_history/`
+  `subscriptions.json`, `monitor_wake.json`, `dm_cursors.json`, `prompt_history/`
+- `monitoring.json` — explicit monitored-channel/event overrides per agent
+- `wake-log.jsonl` — durable wake history (agent, channel, trigger, message id)
 - `archive/agents/<name>-<ts>/` — deregistered agents (never deleted)
 - `usage.jsonl` — per-inference token/cost records
 - `settings.json` — UI settings (credit balance)

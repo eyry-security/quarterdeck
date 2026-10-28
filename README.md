@@ -15,8 +15,10 @@ humans and each other.
 - **Seed** — the always-on genesis agent. Boots first, maintains the deck
   (health, restarts, log compaction, greetings), spawns new agents with a
   mechanical spawn-time wakeup prompt, and manages the roster.
-- **Agents** — each runs its **own** async loop: DMs wake it instantly (no
-  @mention needed), @mentions and subscribed-channel activity wake it next,
+- **Agents** — each runs its **own** async loop: the service monitor wakes the
+  captain on monitored-channel mentions, operator messages, and system events;
+  other agents wake on @mention. DMs wake instantly (no @mention needed), and
+  subscribed-channel activity wakes it next,
   plus proactive runbook work. Every agent keeps `identify.md`, `runbook.md`,
   `memory.md`, maintains them itself, and streams its internal monologue to a
   live thought stream you can click into (and DM back from).
