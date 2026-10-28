@@ -97,6 +97,11 @@ class SubToggle(BaseModel):
     subscribed: bool
 
 
+class MonitorChannels(BaseModel):
+    channels: list[str] = []
+    events: list[str] | None = None
+
+
 class CreditBalance(BaseModel):
     balance_usd: float | None = None
 
@@ -168,6 +173,7 @@ class Room:
         self.users = UserRegistry(home=self.chat.home)
         self.files = AgentFiles(home=self.chat.home)
         self.daemon = daemon
+        self.monitor = getattr(runtime, "monitor", None) if runtime else None
         self._subs: dict[str, set[WebSocket]] = {}
         self._lock = asyncio.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -265,9 +271,11 @@ class Room:
         browser message can never bypass mention/subscription wakeups.
         """
         msg = self.post(channel, author, text, cid=cid)
+        if self.monitor is not None:
+            # The monitor consumes the CHAT_MESSAGE event synchronously from
+            # Chat.post and owns all channel wake routing.
+            return msg
         self.wake_mentioned(text)
-        # Group chats are mention-driven until channel monitoring lands: only
-        # the agents named in the message wake, not every group member.
         if not self.groups.is_group(sanitize_channel(channel)):
             self.wake_subscribers(sanitize_channel(channel))
         return msg
@@ -601,6 +609,57 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
         # Wake so the runner picks up subscription changes promptly.
         room.wake_agent(name, "sub-change")
         return result
+
+    def _monitor():
+        if room.monitor is not None:
+            return room.monitor
+        from .monitoring import Monitor
+        return Monitor(home=room.chat.home, chat=room.chat,
+                       registry=room.registry, daemon=room.daemon)
+
+    @app.get("/api/monitoring")
+    def get_monitoring():
+        monitor = _monitor()
+        return {**monitor.config(), "wakes": monitor.wakes(limit=100)}
+
+    @app.get("/api/monitoring/wakes")
+    def get_monitoring_wakes(agent: str | None = None,
+                             channel: str | None = None,
+                             limit: int = 100):
+        monitor = _monitor()
+        return {"wakes": monitor.wakes(
+            agent=agent, channel=channel, limit=min(max(limit, 0), 1000))}
+
+    @app.get("/api/wakes")
+    def get_wakes(agent: str | None = None, channel: str | None = None,
+                  limit: int = 100):
+        monitor = _monitor()
+        return {"wakes": monitor.wakes(
+            agent=agent, channel=channel, limit=min(max(limit, 0), 1000))}
+
+    @app.get("/api/monitoring/{agent}")
+    def get_agent_monitoring(agent: str):
+        monitor = _monitor()
+        return {
+            "agent": agent,
+            "channels": monitor.monitored_channels(agent),
+            "events": monitor.event_subscriptions(agent),
+            "wakes": monitor.wakes(agent=agent, limit=100),
+        }
+
+    @app.post("/api/monitoring/{agent}")
+    def set_agent_monitoring(agent: str, body: MonitorChannels):
+        monitor = _monitor()
+        channels = monitor.set_monitored(agent, body.channels)
+        if body.events is not None:
+            monitor.subscribe_events(agent, body.events)
+        if room.daemon is not None:
+            room.wake_agent(agent, "monitor-config")
+        return {
+            "agent": agent,
+            "channels": channels,
+            "events": monitor.event_subscriptions(agent),
+        }
 
     @app.get("/api/usage")
     def get_usage():

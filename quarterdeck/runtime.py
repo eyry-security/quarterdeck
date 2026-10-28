@@ -5,8 +5,8 @@ durable event-rule engine, ChatOps router, and (when serving) the web app.
 Every entrypoint builds this object instead of assembling its own half-stack.
 
 Startup order is fixed: daemon (seed -> agents) -> scheduler -> rules ->
-ChatOps -> web. Shutdown mirrors it: web -> ChatOps -> rules -> scheduler ->
-daemon.
+ChatOps -> monitor -> web. Shutdown mirrors it: web -> monitor -> ChatOps ->
+rules -> scheduler -> daemon.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from .chat import Chat
 from .chatops import ChatOps
 from .daemon import Daemon
 from .events import EventBus, EventStore
+from .monitoring import Monitor
 from .rules import RuleEngine, RuleStore
 from .scheduler import Runner, Scheduler
 from .seed import SeedRunner
@@ -40,6 +41,7 @@ class Runtime:
         scheduler: Scheduler | None = None,
         rules: RuleEngine | None = None,
         chatops: ChatOps | None = None,
+        monitor: Monitor | None = None,
         runner_cls=AgentRunner,
         seed_cls=SeedRunner,
     ):
@@ -70,6 +72,13 @@ class Runtime:
             runner_cls=runner_cls,
             seed_cls=seed_cls,
         )
+        self.monitor = monitor or Monitor(
+            home=self.home,
+            chat=self.chat,
+            registry=self.registry,
+            daemon=self.daemon,
+            bus=self.bus,
+        )
         self._daemon_thread: threading.Thread | None = None
         self._started = False
 
@@ -90,12 +99,14 @@ class Runtime:
         self.scheduler.start()
         self.rules.start()
         self.chatops.start()
+        self.monitor.start()
         self._started = True
 
     def stop(self, *, timeout: float = 10.0) -> None:
         """Tear components down in reverse startup order."""
         if not self._started:
             return
+        self.monitor.stop()
         self.chatops.stop()
         self.rules.stop()
         self.scheduler.stop(timeout=timeout)

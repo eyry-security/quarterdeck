@@ -17,6 +17,7 @@ from .events import (
     EventStore,
 )
 from .integrations import format_aplomado_alert, parse_aplomado_event
+from .monitoring import ChannelMonitor, Monitor
 from .rules import Rule, RuleEngine, RuleStore
 from . import subscriptions
 from .thoughts import thought_channel
@@ -42,9 +43,11 @@ __all__ = [
     "CHAT_MESSAGE",
     "Chat",
     "ChatOps",
+    "ChannelMonitor",
     "Event",
     "EventBus",
     "EventStore",
+    "Monitor",
     "RUN_COMPLETED",
     "RUN_REQUESTED",
     "Rule",

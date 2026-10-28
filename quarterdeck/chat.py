@@ -122,9 +122,9 @@ class Chat:
         with self._lock:
             with open(self._file(channel), "a", encoding="utf-8") as f:
                 f.write(json.dumps(msg) + "\n")
+        _notify_post(channel, msg)
         if self.bus is not None:
             self.bus.publish(Event(type=CHAT_MESSAGE, payload=dict(msg)))
-        _notify_post(channel, msg)
         return msg
 
     def history(self, channel: str, n: int = 50) -> list[dict]:
