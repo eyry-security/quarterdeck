@@ -90,6 +90,15 @@ class Chat:
     def _file(self, channel: str) -> Path:
         return self.dir / (sanitize_channel(channel).lstrip("#") + ".jsonl")
 
+    def ensure_channel(self, channel: str) -> str:
+        """Materialize an empty channel log so it appears in channel lists."""
+        channel = sanitize_channel(channel)
+        path = self._file(channel)
+        with self._lock:
+            if not path.exists():
+                path.touch()
+        return channel
+
     def post(self, channel: str, author: str, text: str,
              cid: str | None = None) -> dict:
         """Append a message to a channel. Returns the stored record."""
