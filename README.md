@@ -93,11 +93,15 @@ quarterdeck run                   # same stack, headless (no web listener)
 `serve` binds to `127.0.0.1` on `$QD_PORT` (default `4097`). Persistent state
 lives in `$QD_STATE_DIR` (default `/var/lib/quarterdeck`); the first run seeds
 the `seed` agent and `#general`. `GET /health` returns
-`{"ok": true, "version": "0.1.0", "agents": N}`. It is a local, single-host
-service: there is no auth or tenancy layer, so do not expose it to a network.
-Pass `--allow-local` only for development if you deliberately want
-local-sandbox agents; Docker is the default and fails closed when unavailable.
-The systemd unit file lives at `deploy/quarterdeck.service`.
+`{"ok": true, "version": "0.1.0", "agents": N}`. By default it is a local,
+single-host service with no auth layer, so do not expose it to a network.
+For the public standalone site, `deploy/quarterdeck.service` sets
+`QD_AUTH_REQUIRED=1`: browsers must sign in through the same Firebase project
+as app.eyry.io, the identity is locked to `operator`, and the API/websocket
+reject unauthenticated requests. `deploy/Caddyfile.qd` is the matching TLS
+reverse-proxy block. Pass `--allow-local` only for development if you
+deliberately want local-sandbox agents; Docker is the default and fails closed
+when unavailable.
 
 See the roster, retire an agent (drops its schedules too):
 

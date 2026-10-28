@@ -1684,5 +1684,41 @@ if ("serviceWorker" in navigator) {
 
 (async () => { await loadChannels(); await loadAgents(); await loadUsage(); switchChannel("#general"); setInterval(loadAgents, 15000); setInterval(loadUsage, 60000); })();
 </script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script>
+/* Keep the HttpOnly session cookie fresh while the room stays open. */
+(function () {
+  "use strict";
+  async function boot() {
+    var config;
+    try {
+      config = await (await fetch("/api/config", {cache: "no-store"})).json();
+    } catch (e) { return; }
+    if (!config.auth_required || typeof firebase === "undefined" ||
+        !firebase.initializeApp) return;
+    firebase.initializeApp({
+      projectId: config.firebase_project_id,
+      authDomain: config.firebase_auth_domain,
+      apiKey: config.firebase_api_key
+    });
+    var auth = firebase.auth();
+    async function refresh() {
+      var user = auth.currentUser;
+      if (!user) return;
+      try {
+        var token = await user.getIdToken(true);
+        await fetch("/api/session", {
+          method: "POST",
+          headers: {"Authorization": "Bearer " + token}
+        });
+      } catch (e) {}
+    }
+    auth.onIdTokenChanged(function (user) { if (user) refresh(); });
+    setInterval(refresh, 45 * 60 * 1000);
+  }
+  boot();
+})();
+</script>
 </body>
 </html>

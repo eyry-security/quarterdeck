@@ -37,8 +37,12 @@ Startup order is explicit: daemon (seed → agents) → scheduler → rules →
 ChatOps → web. Shutdown is the reverse. A websocket post and a REST post use
 the same `Room.handle_post` wake path.
 
-`serve` is loopback-only by default (`127.0.0.1`); there is no auth/tenancy
-layer, so do not expose it to a network.
+`serve` is loopback-only by default (`127.0.0.1`). With `QD_AUTH_REQUIRED=1`
+the standalone deployment adds a Firebase gate: browsers sign in through the
+same project as app.eyry.io, all API/websocket traffic requires a valid ID
+token, and the signed-in identity is always `operator`. The public Caddy block
+is `deploy/Caddyfile.qd`; Caddy forwards `X-Forwarded-*`, which uvicorn trusts
+from loopback so secure cookies and URLs reflect the public HTTPS host.
 
 ## Boot order
 

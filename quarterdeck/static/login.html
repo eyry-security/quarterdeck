@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05070d">
+<title>Sign in — Quarterdeck</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #05070d;
+  --text: #f4f7ff;
+  --fg-soft: #c9d2e6;
+  --muted: #a7b2ca;
+  --dim: #8592ad;
+  --accent1: #3b82f6;
+  --accent2: #8b5cf6;
+  --glass-bg: rgba(255, 255, 255, 0.085);
+  --glass-border: rgba(255, 255, 255, 0.13);
+  --glass-edge: rgba(255, 255, 255, 0.25);
+  --radius-xl: 32px;
+  --radius-pill: 999px;
+  --shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.55);
+  --glow-blue: rgba(59, 130, 246, 0.34);
+  --glow-purple: rgba(139, 92, 246, 0.32);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: max(24px, env(safe-area-inset-top)) 18px max(24px, env(safe-area-inset-bottom));
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: -30vmax;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(38vmax 38vmax at 12% 8%, var(--glow-blue), transparent 68%),
+    radial-gradient(44vmax 44vmax at 88% 18%, var(--glow-purple), transparent 70%),
+    radial-gradient(42vmax 42vmax at 58% 92%, rgba(37, 99, 235, 0.18), transparent 72%);
+  filter: blur(18px);
+  animation: drift 34s var(--ease) infinite alternate;
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(100% 80% at 50% 0%, rgba(255, 255, 255, 0.05), transparent 60%),
+    linear-gradient(180deg, rgba(5, 7, 13, 0) 0%, rgba(5, 7, 13, 0.52) 100%);
+}
+@keyframes drift {
+  from { transform: translate3d(-1.5%, -1%, 0) scale(1); }
+  to { transform: translate3d(2%, 1.5%, 0) scale(1.06); }
+}
+.card {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 430px);
+  padding: clamp(26px, 6vw, 40px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.045));
+  box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-lg);
+  -webkit-backdrop-filter: blur(26px) saturate(165%);
+  backdrop-filter: blur(26px) saturate(165%);
+  animation: rise 0.5s var(--spring) both;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(12px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+.mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.85), rgba(139, 92, 246, 0.85));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 8px 22px rgba(59, 130, 246, 0.28);
+  color: #fff;
+  font: 800 13px/1 var(--font-sans);
+  letter-spacing: -0.04em;
+}
+h1 {
+  margin: 22px 0 0;
+  font-size: clamp(32px, 9vw, 42px);
+  line-height: 1.02;
+  letter-spacing: -0.055em;
+  font-weight: 780;
+  background: linear-gradient(105deg, #dbeafe 0%, #a5b4fc 48%, #d8b4fe 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.lede {
+  margin: 12px 0 0;
+  color: var(--fg-soft);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.lede strong { color: var(--text); font-weight: 650; }
+.signin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 54px;
+  margin-top: 28px;
+  padding: 14px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, #3b82f6 0%, #6366f1 46%, #8b5cf6 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 14px 34px rgba(59, 130, 246, 0.3);
+  color: #fff;
+  font: 650 16px/1.2 var(--font-sans);
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: transform 0.22s var(--spring), filter 0.22s var(--ease);
+}
+.signin:hover { filter: brightness(1.08) saturate(1.04); }
+.signin:active { transform: scale(0.985); }
+.signin:disabled { cursor: wait; opacity: 0.7; filter: saturate(0.7); }
+.signin svg { width: 20px; height: 20px; flex: none; }
+.status {
+  min-height: 20px;
+  margin: 16px 2px 0;
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: center;
+}
+.status.error { color: #ffb3bb; }
+.status.busy { color: var(--fg-soft); }
+.foot {
+  margin: 22px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.mono { font-family: var(--font-mono); color: var(--fg-soft); }
+button:focus-visible, a:focus-visible {
+  outline: 2px solid rgba(196, 181, 253, 0.95);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.45), 0 0 18px rgba(139, 92, 246, 0.45);
+}
+a { color: #bfdbfe; }
+@media (max-width: 420px) {
+  body { place-items: end center; }
+  .card { border-radius: 26px 26px 22px 22px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+</style>
+</head>
+<body>
+<main class="card" aria-labelledby="title">
+  <div class="brand"><span class="mark">QD</span> Eyry agent room</div>
+  <h1 id="title">Quarterdeck</h1>
+  <p class="lede">Sign in with the <strong>same Eyry account</strong> you use for
+    <span class="mono">app.eyry.io</span>. Your rooms and agents pick up right
+    where you left them.</p>
+
+  <button id="signin" class="signin" type="button">
+    <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+      <path fill="#fff" d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.1-2.7-.5-4z"/>
+    </svg>
+    <span id="signin-label">Continue with Google</span>
+  </button>
+
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+  <p class="foot">Locked to the <span class="mono">operator</span> identity.
+    There is no separate Quarterdeck account.</p>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var statusEl = document.getElementById("status");
+  var button = document.getElementById("signin");
+  var label = document.getElementById("signin-label");
+  var settling = false;
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text || "";
+    statusEl.className = "status" + (cls ? " " + cls : "");
+  }
+
+  function setBusy(busy) {
+    button.disabled = !!busy;
+    label.textContent = busy ? "Signing in…" : "Continue with Google";
+  }
+
+  async function establish(user) {
+    if (settling) return;
+    settling = true;
+    setBusy(true);
+    setStatus("Verifying your Eyry session…", "busy");
+    try {
+      var token = await user.getIdToken(true);
+      var response = await fetch("/api/session", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + token }
+      });
+      if (!response.ok) {
+        var detail = "";
+        try { detail = (await response.json()).detail || ""; } catch (e) {}
+        throw new Error(detail || "This account is not allowed to open Quarterdeck.");
+      }
+      setStatus("Signed in. Opening your rooms…", "busy");
+      window.location.replace("/");
+    } catch (error) {
+      settling = false;
+      setBusy(false);
+      setStatus(error.message || "Sign-in failed. Please try again.", "error");
+      try { await firebase.auth().signOut(); } catch (e) {}
+    }
+  }
+
+  async function boot() {
+    var config;
+    try {
+      config = await (await fetch("/api/config", {cache: "no-store"})).json();
+    } catch (error) {
+      setStatus("Could not reach Quarterdeck. Please refresh.", "error");
+      return;
+    }
+    if (!config.auth_required) {
+      window.location.replace("/");
+      return;
+    }
+    if (typeof firebase === "undefined" || !firebase.initializeApp) {
+      setStatus("Sign-in is unavailable right now. Please refresh.", "error");
+      return;
+    }
+    firebase.initializeApp({
+      projectId: config.firebase_project_id,
+      authDomain: config.firebase_auth_domain,
+      apiKey: config.firebase_api_key
+    });
+    var auth = firebase.auth();
+    var provider = new firebase.auth.GoogleAuthProvider();
+
+    auth.onAuthStateChanged(function (user) {
+      if (user) {
+        establish(user);
+      } else {
+        settling = false;
+        setBusy(false);
+        setStatus("");
+      }
+    });
+
+    auth.getRedirectResult().catch(function (error) {
+      if (error && error.message) setStatus(error.message, "error");
+    });
+
+    button.addEventListener("click", async function () {
+      setStatus("");
+      setBusy(true);
+      try {
+        await auth.signInWithPopup(provider);
+      } catch (error) {
+        var code = (error && error.code) || "";
+        if (code.indexOf("popup-blocked") !== -1 ||
+            code.indexOf("popup-closed-by-user") !== -1 ||
+            code.indexOf("operation-not-supported") !== -1) {
+          try {
+            await auth.signInWithRedirect(provider);
+            return;
+          } catch (redirectError) {
+            error = redirectError;
+          }
+        }
+        if (code !== "auth/popup-closed-by-user") {
+          setStatus((error && error.message) || "Sign-in failed. Please try again.", "error");
+        }
+        setBusy(false);
+      }
+    });
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
