@@ -632,6 +632,16 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
             return JSONResponse({"ok": True, "hint": "static UI not built yet"})
         return FileResponse(str(idx))
 
+    @app.get("/login")
+    def login():
+        path = STATIC_DIR / "login.html"
+        if not path.exists():
+            return JSONResponse({"ok": False, "hint": "login UI not built yet"})
+        return FileResponse(
+            str(path), media_type="text/html",
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/")
     def index():
         return _index_response()
