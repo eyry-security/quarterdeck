@@ -127,6 +127,8 @@ class TestServiceWorker:
         assert '"/icon-192.png"' in shell
         assert '"/icon-maskable-192.png"' in shell
         assert "SHELL.includes(url.pathname)" in source
+        assert source.index("cache.match(OFFLINE_URL)") < source.index(
+            'cache.match("/static/index.html")')
 
     def test_api_and_websocket_are_never_cached(self):
         source = sw_source()

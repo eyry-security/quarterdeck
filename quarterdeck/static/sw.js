@@ -63,23 +63,22 @@ self.addEventListener("message", event => {
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
-async function offlineShell(request) {
+async function offlineShell() {
   const cache = await caches.open(CACHE);
-  return (await cache.match(request, {ignoreSearch: true}))
+  return (await cache.match(OFFLINE_URL))
     || (await cache.match("/static/index.html"))
     || (await cache.match("/"))
-    || (await cache.match(OFFLINE_URL))
     || new Response("Quarterdeck is offline.", {
       status: 503,
       headers: {"Content-Type": "text/plain; charset=utf-8"}
     });
 }
 
-async function navigate(event, request) {
+async function navigate(request) {
   try {
     return await fetch(request);
   } catch (error) {
-    return offlineShell(request);
+    return offlineShell();
   }
 }
 
@@ -105,7 +104,7 @@ self.addEventListener("fetch", event => {
   if (url.pathname.startsWith("/ws/")) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(navigate(event, request));
+    event.respondWith(navigate(request));
     return;
   }
 
