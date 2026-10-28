@@ -10,6 +10,14 @@ EnvironmentFile=-/root/eyry/quarterdeck/.env
 Environment=PYTHONPATH=/root/eyry/quarterdeck
 Environment=QD_PORT=4097
 Environment=QD_STATE_DIR=/var/lib/quarterdeck
+# Standalone public site: same Firebase project as app.eyry.io (public client
+# config), locked to the operator identity. These are not secrets.
+Environment=QD_AUTH_REQUIRED=1
+Environment=QD_PUBLIC_URL=https://quarterdeck.eyry.io
+Environment=QD_FIREBASE_PROJECT_ID=eyry-pro-web-2026
+Environment=QD_FIREBASE_AUTH_DOMAIN=eyry-pro-web-2026.firebaseapp.com
+Environment=QD_FIREBASE_API_KEY=AIzaSyAbyZngRWwoLb4ZXcmWaMSTiQC7idhWYO0
+Environment=QD_OPERATOR_UID=BPkPyyOd2DQ2yYOOLirQdZd4NrA3
 ExecStart=/root/eyry/venv/bin/python -m quarterdeck.server --host 127.0.0.1
 Restart=on-failure
 RestartSec=5

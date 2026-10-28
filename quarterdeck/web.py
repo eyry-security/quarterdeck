@@ -14,13 +14,14 @@ import json
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
 from .agent_files import AGENT_FILES, AgentFiles
+from .auth import AuthError, AuthGate, AuthSettings
 from .agent_registry import AgentRegistry, RegistryError
 from .chat import Chat, add_post_listener, sanitize_channel
 from .models import DEFAULT_MODELS, resolve_model
@@ -98,6 +99,31 @@ def dm_channel(a: str, b: str) -> str:
     """Deterministic DM channel name for two participants."""
     pair = sorted([a.strip(), b.strip()])
     return f"#dm-{pair[0]}-{pair[1]}"
+
+
+def _author_for(conn, fallback: str) -> str:
+    """Lock a signed-in browser to the operator identity when auth is on."""
+    user = getattr(getattr(conn, "state", None), "user", None)
+    if user:
+        return str(user.get("name") or "operator")
+    return fallback
+
+
+def _session_payload(claims: dict) -> dict:
+    return {
+        "authenticated": True,
+        "uid": claims.get("uid", ""),
+        "email": claims.get("email", ""),
+        "name": claims.get("name", "operator"),
+        "auth_method": claims.get("auth_method", "firebase"),
+    }
+
+
+def _request_scheme(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-proto", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip().lower()
+    return request.url.scheme
 
 
 class Room:
@@ -220,10 +246,15 @@ class Room:
 
 def create_app(home: Path | None = None, daemon=None, *, runtime=None,
                bus: EventBus | None = None, chat: Chat | None = None,
-               registry: AgentRegistry | None = None) -> FastAPI:
+               registry: AgentRegistry | None = None,
+               auth: AuthSettings | None = None) -> FastAPI:
     room = Room(home=home, daemon=daemon, runtime=runtime, bus=bus, chat=chat,
                 registry=registry)
+    auth_settings = auth if auth is not None else AuthSettings.from_env()
+    gate = AuthGate(
+        None, auth_settings, login_page=STATIC_DIR / "login.html")
     app = FastAPI(title="Quarterdeck")
+    app.state.auth_gate = gate
 
     @app.get("/health")
     def health():
@@ -232,6 +263,60 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
         except Exception:
             agents = 0
         return {"ok": True, "version": __version__, "agents": agents}
+
+    @app.get("/api/config")
+    def public_config():
+        """Public values the login screen and room need (safe to expose)."""
+        settings = gate.settings
+        return {
+            "auth_required": gate.enabled,
+            "firebase_project_id": settings.project_id,
+            "firebase_auth_domain": settings.auth_domain,
+            "firebase_api_key": settings.api_key,
+            "site_url": settings.public_url,
+        }
+
+    @app.get("/api/session")
+    def get_session(request: Request):
+        if not gate.enabled:
+            return {"authenticated": False, "auth_required": False}
+        claims = gate.claims_from_scope(request.scope)
+        if claims is None:
+            raise HTTPException(401, "authentication required")
+        return _session_payload(claims)
+
+    @app.post("/api/session")
+    def create_session(request: Request, response: Response):
+        if not gate.enabled:
+            return {"authenticated": True, "auth_required": False}
+        try:
+            token = gate._token_from_scope(request.scope, allow_query=False)
+        except Exception:
+            token = ""
+        if not token:
+            raise HTTPException(401, "missing bearer token")
+        try:
+            claims = gate.verify(token)
+        except AuthError as exc:
+            raise HTTPException(401, str(exc)) from exc
+        secure = _request_scheme(request) == "https"
+        response.set_cookie(
+            key=gate.settings.cookie_name,
+            value=token,
+            max_age=gate.settings.cookie_max_age,
+            httponly=True,
+            secure=secure,
+            samesite="lax",
+            path="/",
+        )
+        payload = _session_payload(claims)
+        payload["auth_required"] = True
+        return payload
+
+    @app.delete("/api/session")
+    def delete_session(response: Response):
+        response.delete_cookie(gate.settings.cookie_name, path="/")
+        return {"authenticated": False}
 
     @app.get("/api/channels")
     def list_channels():
@@ -251,13 +336,14 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
                 "messages": room.chat.history(channel, n=min(n, 200))}
 
     @app.post("/api/channels/{channel}/messages")
-    async def post_message(channel: str, body: PostMessage):
+    async def post_message(channel: str, body: PostMessage, request: Request):
+        author = _author_for(request, body.author)
         try:
-            room.users.ensure(body.author)
+            room.users.ensure(author)
         except UserError as e:
             raise HTTPException(400, str(e))
         try:
-            msg = room.handle_post(channel, body.author, body.text, cid=body.cid)
+            msg = room.handle_post(channel, author, body.text, cid=body.cid)
         except ValueError as e:
             raise HTTPException(400, str(e))
         # Broadcast happens via the chat post-listener; wakeups happen inside
@@ -265,13 +351,14 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
         return msg
 
     @app.post("/api/dm")
-    async def send_dm(body: DM):
+    async def send_dm(body: DM, request: Request):
+        sender = _author_for(request, body.sender)
         try:
-            room.users.ensure(body.sender)
+            room.users.ensure(sender)
         except UserError as e:
             raise HTTPException(400, str(e))
-        channel = dm_channel(body.sender, body.recipient)
-        msg = room.post(channel, body.sender, f"(dm) {body.text}", cid=body.cid)
+        channel = dm_channel(sender, body.recipient)
+        msg = room.post(channel, sender, f"(dm) {body.text}", cid=body.cid)
         # A DM always wakes the recipient agent immediately — no @mention needed.
         room.wake_agent(body.recipient, "dm")
         return {"channel": channel, "message": msg}
@@ -485,8 +572,9 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
                 except json.JSONDecodeError:
                     continue
                 if payload.get("type") == "post":
+                    author = _author_for(ws, payload.get("author", "?"))
                     try:
-                        room.handle_post(channel, payload.get("author", "?"),
+                        room.handle_post(channel, author,
                                          payload.get("text", ""),
                                          cid=payload.get("cid"))
                     except ValueError:
@@ -544,6 +632,16 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
             return JSONResponse({"ok": True, "hint": "static UI not built yet"})
         return FileResponse(str(idx))
 
+    @app.get("/login")
+    def login():
+        path = STATIC_DIR / "login.html"
+        if not path.exists():
+            return JSONResponse({"ok": False, "hint": "login UI not built yet"})
+        return FileResponse(
+            str(path), media_type="text/html",
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/")
     def index():
         return _index_response()
@@ -555,6 +653,9 @@ def create_app(home: Path | None = None, daemon=None, *, runtime=None,
 
     # Thought streams (agent monologues)
     mount_thought_routes(app, room)
+    # Firebase login gate: public login page + server-side API/ws enforcement.
+    app.add_middleware(
+        AuthGate, settings=auth_settings, login_page=STATIC_DIR / "login.html")
     # expose room for tests / embedding
     app.state.room = room
     return app

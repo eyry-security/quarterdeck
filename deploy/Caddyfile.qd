@@ -1,0 +1,18 @@
+# Quarterdeck standalone site. Include this block in the host Caddyfile.
+# Caddy obtains/renews the certificate automatically once DNS resolves.
+quarterdeck.eyry.io {
+	encode zstd gzip
+
+	reverse_proxy 127.0.0.1:4097 {
+		# Caddy sets X-Forwarded-For, X-Forwarded-Proto and X-Forwarded-Host.
+		# Quarterdeck trusts these only from loopback (QD_FORWARDED_ALLOW_IPS).
+		header_up X-Real-IP {remote_host}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

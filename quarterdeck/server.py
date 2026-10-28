@@ -82,7 +82,17 @@ def _make_server(uvicorn, config):
 def _serve(app, host: str, port: int) -> None:
     import uvicorn
 
-    server = _make_server(uvicorn, uvicorn.Config(app, host=host, port=port))
+    # Caddy terminates TLS on this host and forwards X-Forwarded-* over
+    # loopback. Trust those headers so request.url.scheme is https and secure
+    # cookies / absolute URLs reflect the public host.
+    forwarded = os.environ.get("QD_FORWARDED_ALLOW_IPS", "127.0.0.1").strip()
+    server = _make_server(uvicorn, uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        proxy_headers=True,
+        forwarded_allow_ips=forwarded or "127.0.0.1",
+    ))
     previous: dict[int, object] = {}
 
     if threading.current_thread() is threading.main_thread():
