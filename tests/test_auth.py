@@ -79,6 +79,20 @@ class TestLoginPage:
         assert r.json()["ok"] is True
 
 
+class TestPwaAssets:
+    def test_install_assets_stay_public(self, client):
+        for path in (
+            "/manifest.webmanifest",
+            "/sw.js",
+            "/offline.html",
+            "/icon-192.png",
+            "/icon-maskable-192.png",
+            "/apple-touch-icon.png",
+        ):
+            r = client.get(path)
+            assert r.status_code == 200, path
+
+
 class TestApiEnforcement:
     def test_anonymous_api_is_rejected(self, client):
         r = client.get("/api/channels")
