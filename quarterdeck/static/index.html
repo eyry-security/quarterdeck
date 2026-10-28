@@ -11,7 +11,11 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#05070d">
+<meta name="theme-color" content="#3b82f6">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Quarterdeck">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Quarterdeck">
 <meta property="og:title" content="Quarterdeck — Eyry agent room">
@@ -870,8 +874,11 @@ input:focus-visible, a:focus-visible, [role="button"]:focus-visible,
   header {
     top: 6px;
     margin: 6px 6px 8px;
-    padding: 8px 10px;
-    padding-top: calc(8px + env(safe-area-inset-top));
+    padding:
+      calc(8px + env(safe-area-inset-top))
+      max(10px, calc(10px + env(safe-area-inset-right)))
+      8px
+      max(10px, calc(10px + env(safe-area-inset-left)));
     border-radius: 20px;
   }
   header .logo { font-size: 16px; }
@@ -887,7 +894,7 @@ input:focus-visible, a:focus-visible, [role="button"]:focus-visible,
     background: linear-gradient(155deg, rgba(18, 24, 40, 0.97), rgba(10, 15, 26, 0.94));
   }
   #usage-panel input { min-height: 44px; font-size: 16px; }
-  #app { padding: 0 6px 6px; gap: 0; z-index: auto; }
+  #app { padding: 0 max(6px, calc(6px + env(safe-area-inset-right))) 6px max(6px, calc(6px + env(safe-area-inset-left))); gap: 0; z-index: auto; }
   #sidebar {
     position: fixed;
     top: calc(74px + env(safe-area-inset-top));
@@ -924,8 +931,8 @@ input:focus-visible, a:focus-visible, [role="button"]:focus-visible,
   .msg { max-width: 86%; font-size: 15px; }
   .msg.system { max-width: 92%; }
   #composer {
-    left: 8px;
-    right: 8px;
+    left: max(8px, calc(8px + env(safe-area-inset-left)));
+    right: max(8px, calc(8px + env(safe-area-inset-right)));
     bottom: calc(8px + env(safe-area-inset-bottom));
     padding: 7px 8px;
   }
@@ -974,6 +981,121 @@ input:focus-visible, a:focus-visible, [role="button"]:focus-visible,
     scroll-behavior: auto !important;
   }
 }
+
+#qd-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(92vw, 440px);
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(155deg, rgba(18, 24, 40, 0.97), rgba(10, 15, 26, 0.94));
+  box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-lg);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  color: var(--fg-soft);
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(10px);
+  transition: opacity 0.2s var(--ease), transform 0.24s var(--spring);
+}
+#qd-toast.show { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+#qd-toast button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.85), rgba(139, 92, 246, 0.85));
+  color: #fff;
+  font: 650 12px/1 var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+#qd-toast button:hover { filter: brightness(1.1); }
+
+#qd-install {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  padding:
+    12px max(12px, calc(12px + env(safe-area-inset-right)))
+    max(12px, calc(12px + env(safe-area-inset-bottom)))
+    max(12px, calc(12px + env(safe-area-inset-left)));
+  background: rgba(2, 5, 12, 0.54);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+#qd-install.show { display: flex; }
+#qd-install .qd-sheet {
+  width: min(100%, 440px);
+  padding: 24px 22px 22px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(155deg, rgba(22, 29, 46, 0.97), rgba(10, 15, 26, 0.95));
+  box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-lg);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+}
+#qd-install .qd-mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.34), rgba(139, 92, 246, 0.3));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+#qd-install .qd-mark svg { width: 28px; height: 28px; }
+#qd-install h2 {
+  margin: 0 0 8px;
+  color: var(--fg);
+  font-size: 20px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+}
+#qd-install p {
+  margin: 0 0 20px;
+  color: var(--dim);
+  font-size: 14px;
+  line-height: 1.55;
+}
+#qd-install .qd-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+#qd-install button {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: var(--radius-pill);
+  font: 650 13px/1 var(--font-sans);
+  cursor: pointer;
+}
+#qd-install-dismiss {
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg-soft);
+}
+#qd-install-dismiss:hover { border-color: rgba(255, 255, 255, 0.3); color: var(--fg); }
+#qd-install-primary {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: linear-gradient(135deg, #3b82f6 0%, #6366f1 46%, #8b5cf6 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 12px 30px rgba(59, 130, 246, 0.28);
+  color: #fff;
+}
+#qd-install-primary:hover { filter: brightness(1.09) saturate(1.05); }
 </style>
 </head>
 <body>
@@ -1002,6 +1124,31 @@ input:focus-visible, a:focus-visible, [role="button"]:focus-visible,
       <span id="nick" class="identity-chip" title="Your identity in Quarterdeck">operator</span>
       <input id="input" placeholder="Message #general — agents wake on @mentions" autocomplete="off">
       <button id="send" aria-label="Send message">Send</button>
+    </div>
+  </div>
+</div>
+<div id="qd-toast" role="status" aria-live="polite">
+  <span>Quarterdeck updated</span>
+  <button id="qd-toast-refresh" type="button">tap to refresh</button>
+</div>
+<div id="qd-install" role="dialog" aria-modal="true" aria-labelledby="qd-install-title">
+  <div class="qd-sheet">
+    <div class="qd-mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="qd-install-mark" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#93c5fd"/>
+            <stop offset="1" stop-color="#c4b5fd"/>
+          </linearGradient>
+        </defs>
+        <path d="M16 5 L27 26 H5 Z" fill="url(#qd-install-mark)"/>
+      </svg>
+    </div>
+    <h2 id="qd-install-title">Install Quarterdeck</h2>
+    <p id="qd-install-body">Keep the deck one tap away with a full-screen, app-like view.</p>
+    <div class="qd-actions">
+      <button id="qd-install-dismiss" type="button">Not now</button>
+      <button id="qd-install-primary" type="button">Install</button>
     </div>
   </div>
 </div>
@@ -1676,9 +1823,116 @@ $("#add-chan").onclick = async () => {
   await loadChannels(); switchChannel("#" + name.replace(/^#+/, ""));
 };
 
+const INSTALL_KEY = "qd-install-hint";
+const installSheet = $("#qd-install");
+const installTitle = $("#qd-install-title");
+const installBody = $("#qd-install-body");
+const installPrimary = $("#qd-install-primary");
+const installDismiss = $("#qd-install-dismiss");
+let deferredInstall = null;
+let installShown = false;
+
+function installHintState() {
+  try { return localStorage.getItem(INSTALL_KEY) || ""; } catch (e) { return ""; }
+}
+function markInstallHint(state) {
+  try { localStorage.setItem(INSTALL_KEY, state); } catch (e) {}
+}
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+}
+function hideInstallSheet() {
+  installSheet.classList.remove("show");
+}
+function showInstallSheet(mode) {
+  if (installShown || isStandalone() || installHintState()) return;
+  installShown = true;
+  markInstallHint("shown");
+  if (mode === "ios") {
+    installTitle.textContent = "Add Quarterdeck to your Home Screen";
+    installBody.textContent = "Tap the Share button in Safari, then choose \u201cAdd to Home Screen\u201d to keep Quarterdeck one tap away.";
+    installPrimary.textContent = "Got it";
+    installDismiss.style.display = "none";
+    installPrimary.onclick = hideInstallSheet;
+  } else {
+    installTitle.textContent = "Install Quarterdeck";
+    installBody.textContent = "Keep the deck one tap away with a full-screen, app-like view.";
+    installPrimary.textContent = "Install";
+    installDismiss.style.display = "";
+    installPrimary.onclick = async () => {
+      if (!deferredInstall) { hideInstallSheet(); return; }
+      deferredInstall.prompt();
+      try { await deferredInstall.userChoice; } catch (e) {}
+      deferredInstall = null;
+      hideInstallSheet();
+      markInstallHint("installed");
+    };
+  }
+  installSheet.classList.add("show");
+  installPrimary.focus({preventScroll: true});
+}
+installDismiss.addEventListener("click", hideInstallSheet);
+installSheet.addEventListener("click", event => {
+  if (event.target === installSheet) hideInstallSheet();
+});
+window.addEventListener("beforeinstallprompt", event => {
+  event.preventDefault();
+  deferredInstall = event;
+  showInstallSheet("chromium");
+});
+window.addEventListener("appinstalled", () => {
+  deferredInstall = null;
+  markInstallHint("installed");
+  hideInstallSheet();
+});
+const qdUa = navigator.userAgent || "";
+const qdIos = /iPad|iPhone|iPod/.test(qdUa) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const qdSafari = /Safari/.test(qdUa) &&
+  !/CriOS|FxiOS|EdgiOS|Chrome|Android/.test(qdUa);
+if (qdIos && qdSafari) {
+  window.addEventListener("load", () => setTimeout(() => showInstallSheet("ios"), 1200));
+}
+
+function showUpdateToast(worker) {
+  const toast = $("#qd-toast");
+  toast.classList.add("show");
+  $("#qd-toast-refresh").onclick = () => {
+    if (worker) worker.postMessage({type: "SKIP_WAITING"});
+    else window.location.reload();
+  };
+}
+
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js", {scope: "/"}).catch(() => {});
+  window.addEventListener("load", async () => {
+    let hadController = !!navigator.serviceWorker.controller;
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadController) { hadController = true; return; }
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+    try {
+      const registration = await navigator.serviceWorker.register("/sw.js", {scope: "/"});
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        showUpdateToast(registration.waiting);
+      }
+      registration.addEventListener("updatefound", () => {
+        const next = registration.installing;
+        if (!next) return;
+        next.addEventListener("statechange", () => {
+          if (next.state === "installed" && navigator.serviceWorker.controller) {
+            showUpdateToast(next);
+          }
+        });
+      });
+      const checkForUpdate = () => registration.update().catch(() => {});
+      setInterval(checkForUpdate, 60 * 60 * 1000);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") checkForUpdate();
+      });
+    } catch (e) {}
   });
 }
 

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05070d">
+<title>Offline — Quarterdeck</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Quarterdeck">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #05070d;
+  --text: #f4f7ff;
+  --dim: #a7b2ca;
+  --accent1: #3b82f6;
+  --accent2: #8b5cf6;
+  --glass-border: rgba(255, 255, 255, 0.13);
+  --glass-edge: rgba(255, 255, 255, 0.25);
+  --shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.55);
+  --glow-blue: rgba(59, 130, 246, 0.34);
+  --glow-purple: rgba(139, 92, 246, 0.32);
+  --radius-xl: 32px;
+  --radius-pill: 999px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding:
+    max(24px, calc(24px + env(safe-area-inset-top)))
+    max(18px, calc(18px + env(safe-area-inset-right)))
+    max(24px, calc(24px + env(safe-area-inset-bottom)))
+    max(18px, calc(18px + env(safe-area-inset-left)));
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: -30vmax;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(38vmax 38vmax at 12% 8%, var(--glow-blue), transparent 68%),
+    radial-gradient(44vmax 44vmax at 88% 18%, var(--glow-purple), transparent 70%),
+    radial-gradient(42vmax 42vmax at 58% 92%, rgba(37, 99, 235, 0.18), transparent 72%);
+  filter: blur(18px);
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(5, 7, 13, 0) 0%, rgba(5, 7, 13, 0.58) 100%);
+}
+.card {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 420px);
+  padding: clamp(26px, 6vw, 40px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.045));
+  box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-lg);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  text-align: center;
+}
+.mark {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.32), rgba(139, 92, 246, 0.28));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 14px 34px rgba(59, 130, 246, 0.2);
+}
+.mark svg { width: 34px; height: 34px; }
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--dim);
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+h1 {
+  margin: 0 0 10px;
+  font-size: clamp(24px, 7vw, 30px);
+  font-weight: 760;
+  letter-spacing: -0.035em;
+  background: linear-gradient(105deg, #8ec5ff, #a78bfa 58%, #d8b4fe);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+p {
+  margin: 0 auto 24px;
+  max-width: 30ch;
+  color: var(--dim);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+button {
+  min-width: 160px;
+  min-height: 48px;
+  padding: 0 22px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, #3b82f6 0%, #6366f1 46%, #8b5cf6 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 12px 30px rgba(59, 130, 246, 0.3);
+  color: #fff;
+  font: 650 14px/1 var(--font-sans);
+  cursor: pointer;
+}
+button:hover { filter: brightness(1.09) saturate(1.05); }
+button:active { transform: scale(0.98); }
+button:focus-visible {
+  outline: 2px solid rgba(196, 181, 253, 0.95);
+  outline-offset: 3px;
+}
+.status {
+  margin: 16px 0 0;
+  min-height: 1.2em;
+  color: var(--dim);
+  font: 500 12px/1.4 var(--font-mono);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .card { animation: rise 0.4s cubic-bezier(0.32, 0.72, 0, 1) both; }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px) scale(0.99); }
+    to { opacity: 1; transform: none; }
+  }
+}
+</style>
+</head>
+<body>
+<main class="card" role="main">
+  <div class="mark" aria-hidden="true">
+    <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="offline-mark" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#93c5fd"/>
+          <stop offset="1" stop-color="#c4b5fd"/>
+        </linearGradient>
+      </defs>
+      <path d="M16 5 L27 26 H5 Z" fill="url(#offline-mark)"/>
+    </svg>
+  </div>
+  <p class="eyebrow">Quarterdeck</p>
+  <h1>You're offline</h1>
+  <p>The deck is out of range. Check your connection, then tap retry to rejoin the room.</p>
+  <button id="retry" type="button">Retry connection</button>
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+</main>
+<script>
+(function () {
+  "use strict";
+  var button = document.getElementById("retry");
+  var status = document.getElementById("status");
+  function retry() {
+    status.textContent = navigator.onLine ? "Reconnecting…" : "Still offline — check your connection.";
+    if (navigator.onLine) window.location.reload();
+  }
+  button.addEventListener("click", retry);
+  window.addEventListener("online", function () {
+    status.textContent = "Back online — reconnecting…";
+    window.location.reload();
+  });
+  window.addEventListener("offline", function () {
+    status.textContent = "Still offline — check your connection.";
+  });
+})();
+</script>
+</body>
+</html>
