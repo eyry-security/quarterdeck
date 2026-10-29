@@ -220,44 +220,52 @@ def _resolve_scope(client, scope) -> dict:
     raise ProAPIError(f"scope {raw!r} not found; use list_scopes first")
 
 
-def _format_scope(item: dict) -> str:
-    status = "verified" if item.get("verified") else (
-        "verification needed" if item.get("verification_required")
-        else "unverified")
-    last = item.get("last_scan") or {}
-    scan_state = "-"
-    if last:
-        scan_state = (f"#{last.get('id')} {last.get('status', '?')}"
-                      f" stage={last.get('stage') or '-'}")
-    return (f"#{item.get('id')} {item.get('pattern')} "
-            f"[mode={item.get('mode') or '-'}, {status}] "
-            f"cadence={item.get('scan_cadence') or 'off'}, "
-            f"hosts={item.get('hosts_count', 0)}, "
-            f"findings={item.get('findings_count', 0)}, "
-            f"last_scan={scan_state}")
+def _md_cell(value) -> str:
+    if value is None or value == "":
+        return "-"
+    text = str(value).replace("\\", "\\\\").replace("|", "\\|")
+    return " ".join(text.splitlines()).strip() or "-"
 
 
-def _format_scan(scan: dict) -> str:
-    bits = [
-        f"{scan.get('run_id') or scan.get('id')}",
-        f"{scan.get('kind') or 'full'}",
-        f"status={scan.get('status') or '?'}",
-        f"stage={scan.get('stage') or '-'}",
-        f"hosts={scan.get('hosts_probed', 0)}/{scan.get('hosts_found', 0)}",
-        f"findings={scan.get('findings_count', 0)}",
-        f"started={_when(scan.get('created_at'))}",
+def _md_table(headers, rows, right=()) -> str:
+    right = set(right)
+    lines = ["| " + " | ".join(_md_cell(h) for h in headers) + " |"]
+    lines.append("| " + " | ".join(
+        "---:" if i in right else "---" for i in range(len(headers))) + " |")
+    for row in rows:
+        lines.append("| " + " | ".join(_md_cell(v) for v in row) + " |")
+    return "\n".join(lines)
+
+
+def _scope_status(item: dict) -> str:
+    if item.get("verified"):
+        return "verified"
+    if item.get("verification_required"):
+        return "verification needed"
+    return "unverified"
+
+
+def _scan_state(scan: dict) -> str:
+    if not scan:
+        return "-"
+    return (f"#{scan.get('id') or scan.get('run_id') or '?'} "
+            f"{scan.get('status') or '?'} "
+            f"(stage={scan.get('stage') or '-'})")
+
+
+def _scan_row(scan: dict) -> list:
+    return [
+        scan.get("run_id") or scan.get("id") or "-",
+        scan.get("kind") or "full",
+        scan.get("status") or "?",
+        scan.get("stage") or "-",
+        scan.get("hosts_probed", 0),
+        scan.get("hosts_found", 0),
+        scan.get("findings_count", 0),
+        _when(scan.get("created_at")),
+        _when(scan.get("finished_at")) if scan.get("finished_at") else "-",
+        str(scan.get("error"))[:200] if scan.get("error") else "-",
     ]
-    if scan.get("finished_at"):
-        bits.append(f"finished={_when(scan.get('finished_at'))}")
-    if scan.get("error"):
-        bits.append(f"error={str(scan['error'])[:200]}")
-    return " ".join(bits)
-
-
-def _format_finding(item: dict) -> str:
-    return (f"#{item.get('id')} [{item.get('severity', '?')}] "
-            f"{item.get('host', '?')} — {item.get('title', '?')} "
-            f"(status={item.get('status', '?')})")
 
 
 def platform_tools(agent_name: str, home=None, client=None) -> list:
@@ -283,7 +291,21 @@ def platform_tools(agent_name: str, home=None, client=None) -> list:
             return f"error: {exc}"
         if not scopes:
             return "no scopes configured"
-        return "scopes:\n" + "\n".join(_format_scope(s) for s in scopes)
+        rows = [[
+            f"#{s.get('id')}",
+            s.get("pattern") or "-",
+            s.get("mode") or "-",
+            _scope_status(s),
+            s.get("scan_cadence") or "off",
+            s.get("hosts_count", 0),
+            s.get("findings_count", 0),
+            _scan_state(s.get("last_scan") or {}),
+        ] for s in scopes]
+        return "scopes:\n\n" + _md_table(
+            ["ID", "Pattern", "Mode", "Verification", "Cadence", "Hosts",
+             "Findings", "Last scan"],
+            rows, right=(0, 5, 6),
+        )
 
     def list_hosts(scope: str, limit: int = 50, offset: int = 0) -> str:
         """List discovered hosts for a scope. Args: scope (id or pattern), limit, offset."""
@@ -323,10 +345,28 @@ def platform_tools(agent_name: str, home=None, client=None) -> list:
             live = client.get_scan(latest.get("run_id") or latest.get("id"))
         except Exception:  # noqa: BLE001 — list rows are still useful
             live = None
-        lines = [_format_scan(scan) for scan in scans[:5]]
+        rows = []
+        seen = set()
         if live:
-            lines.insert(0, "live: " + _format_scan(live))
-        return f"{scope_item['pattern']} scans:\n" + "\n".join(lines)
+            key = str(live.get("run_id") or live.get("id"))
+            rows.append(_scan_row(live))
+            seen.add(key)
+        for scan in scans[:5]:
+            key = str(scan.get("run_id") or scan.get("id"))
+            if key in seen:
+                continue
+            rows.append(_scan_row(scan))
+            seen.add(key)
+        lead = f"{scope_item['pattern']} scans:"
+        if live:
+            lead += (f" live: {live.get('run_id') or live.get('id') or '?'} "
+                     f"{live.get('status') or '?'} "
+                     f"stage={live.get('stage') or '-'}")
+        return lead + "\n\n" + _md_table(
+            ["Run", "Kind", "Status", "Stage", "Probed", "Found", "Findings",
+             "Started", "Finished", "Error"],
+            rows, right=(4, 5, 6),
+        )
 
     def list_findings(scope: str = "", host: str = "", severity: str = "",
                       status: str = "", limit: int = 20,
@@ -368,8 +408,19 @@ def platform_tools(agent_name: str, home=None, client=None) -> list:
         page = findings[start:start + count]
         if not page:
             return f"{label}: no findings match"
-        return (f"{label} findings ({start + 1}-{start + len(page)} of {total}):\n"
-                + "\n".join(_format_finding(f) for f in page))
+        rows = [[
+            f"#{f.get('id')}",
+            f.get("severity") or "?",
+            f.get("status") or "?",
+            f.get("host") or "?",
+            f.get("title") or "?",
+            f.get("scope_pattern") or f.get("scope_id") or "-",
+        ] for f in page]
+        return (f"{label} findings ({start + 1}-{start + len(page)} of "
+                f"{total}):\n\n" + _md_table(
+                    ["ID", "Severity", "Status", "Host", "Title", "Scope"],
+                    rows, right=(0,),
+                ))
 
     def get_finding(finding_id: int) -> str:
         """Full finding: summary, reproduction, impact, remediation, evidence, history. Args: finding id."""
@@ -450,18 +501,24 @@ def platform_tools(agent_name: str, home=None, client=None) -> list:
                 items = client.list_scopes()
             if not items:
                 return "no scopes configured"
-            lines = []
+            rows = []
             for item in items:
                 schedule = client.get_schedule(item["id"])
                 cadence = schedule.get("cadence") or "off"
                 enabled = cadence != "off"
-                lines.append(
-                    f"#{item['id']} {item['pattern']}: cadence={cadence} "
-                    f"enabled={'yes' if enabled else 'no'} "
-                    f"next={_when(schedule.get('next_scan_at'))}")
+                rows.append([
+                    f"#{item['id']}",
+                    item["pattern"],
+                    cadence,
+                    "yes" if enabled else "no",
+                    _when(schedule.get("next_scan_at")),
+                ])
         except Exception as exc:  # noqa: BLE001
             return f"error: {exc}"
-        return "schedules:\n" + "\n".join(lines)
+        return "schedules:\n\n" + _md_table(
+            ["ID", "Pattern", "Cadence", "Enabled", "Next scan"],
+            rows, right=(0,),
+        )
 
     def set_schedule(scope: str, cadence: str = "",
                      enabled: bool | None = None) -> str:

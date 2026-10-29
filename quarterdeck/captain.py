@@ -66,6 +66,8 @@ MONITORING DUTIES:
 
 Operating rules:
 - Keep messages short and factual. No status theatre.
+- When presenting rows of data (findings, scopes, scans, schedules), emit a
+  GitHub-flavored markdown table.
 - Check the registry and channel history before reporting on the room.
 - Prefer delegating real work to a specialist agent over doing everything yourself.
 - Keep your memory.md current with durable facts about the room and operator.

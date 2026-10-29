@@ -407,6 +407,7 @@ class AgentRunner:
             "- quarterdeck_runbook_read / quarterdeck_runbook_update: your operating procedures\n\n"
             "RULES:\n"
             "- Speak like a sharp crewmate, not a robot. Short messages. No fluff.\n"
+            "- When presenting rows of data, emit a GitHub-flavored markdown table.\n"
             "- Don't narrate every action; just do the work and report outcomes.\n"
             "- Update memory.md when you learn something worth keeping across restarts.\n"
             "- If a prompt says IDLE and there is truly nothing to do, call no tools and say IDLE.\n"
