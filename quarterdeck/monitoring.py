@@ -413,7 +413,7 @@ class Monitor:
             pass
         with self._lock:
             names.update(self._state.get("agents", {}).keys())
-        return sorted(name for name in names if name and name.lower() != "seed")
+        return sorted(name for name in names if name)
 
     def _is_agent(self, author: str) -> bool:
         target = (author or "").strip().lower()

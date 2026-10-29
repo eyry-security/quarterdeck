@@ -93,6 +93,15 @@ def test_mention_wakes_captain_even_when_channel_is_unmonitored(tmp_path):
     assert wake.calls == [("self", "monitor:mention")]
 
 
+def test_seed_is_monitored_like_other_agents(tmp_path):
+    home, chat, registry, groups, monitor, wake = _setup(tmp_path)
+    registry.spawn("seed", system_prompt="seed", sandbox="local")
+
+    chat.post("#random", "operator", "@seed health check")
+    monitor.observe(chat.history("#random", n=1)[-1])
+    assert wake.calls == [("seed", "monitor:mention")]
+
+
 def test_unmentioned_group_member_does_not_wake_non_captain(tmp_path):
     home, chat, registry, groups, monitor, wake = _setup(tmp_path)
     _group(groups, "ops", ["scout"])
