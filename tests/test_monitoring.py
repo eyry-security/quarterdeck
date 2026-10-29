@@ -14,7 +14,7 @@ from quarterdeck.captain import SELF_RUNBOOK, SELF_SYSTEM_PROMPT
 from quarterdeck.chat import Chat
 from quarterdeck.events import APLOMADO_SCAN_COMPLETED, CHAT_MESSAGE, Event
 from quarterdeck.groups import GroupStore
-from quarterdeck.monitoring import Monitor
+from quarterdeck.monitoring import Monitor, take_wake_context
 from quarterdeck.web import create_app
 
 
@@ -85,6 +85,23 @@ def test_mention_wakes_named_non_captain_even_when_unmonitored(tmp_path):
     assert wake.calls == [("scout", "monitor:mention")]
 
 
+def test_mention_wakes_captain_even_when_channel_is_unmonitored(tmp_path):
+    home, chat, registry, groups, monitor, wake = _setup(tmp_path)
+
+    chat.post("#random", "operator", "@self take a look")
+    monitor.observe(chat.history("#random", n=1)[-1])
+    assert wake.calls == [("self", "monitor:mention")]
+
+
+def test_unmentioned_group_member_does_not_wake_non_captain(tmp_path):
+    home, chat, registry, groups, monitor, wake = _setup(tmp_path)
+    _group(groups, "ops", ["scout"])
+
+    chat.post("#ops", "operator", "just a status note")
+    monitor.observe(chat.history("#ops", n=1)[-1])
+    assert wake.calls == []
+
+
 def test_cooldown_batches_a_burst_into_one_wake(tmp_path):
     home, chat, registry, groups, monitor, wake = _setup(tmp_path, cooldown=60.0)
     _group(groups, "ops", ["self", "scout"])
@@ -99,6 +116,11 @@ def test_cooldown_batches_a_burst_into_one_wake(tmp_path):
     assert record["channel"] == "#ops"
     assert record["trigger"] == "operator-question"
     assert record["message_id"]
+    # Every message in the burst stays available to the agent's next turn.
+    queued = take_wake_context(home, "self")
+    assert [item["message_id"] for item in queued] == [
+        chat.history("#ops", n=6)[i]["id"] for i in range(6)
+    ]
 
 
 def test_wake_log_is_written_and_exposed_by_api(tmp_path):
@@ -148,6 +170,34 @@ def test_scan_completion_event_wakes_subscribed_captain(tmp_path):
     assert wake.calls == [("self", f"monitor:event:{APLOMADO_SCAN_COMPLETED}")]
     record = monitor.wakes(agent="self")[0]
     assert record["message_id"] == event.id
+
+
+def test_scan_failure_event_wakes_subscribed_captain(tmp_path):
+    home, chat, registry, groups, monitor, wake = _setup(tmp_path)
+    event = Event(
+        type="aplomado.scan.failed",
+        payload={"channel": "#general", "data": {"error": "timeout"}},
+    )
+    monitor.handle_event(event)
+    assert wake.calls == [("self", "monitor:event:aplomado.scan.failed")]
+    record = monitor.wakes(agent="self")[0]
+    assert record["message_id"] == event.id
+
+
+def test_event_subscribed_after_start_is_routed(tmp_path):
+    from quarterdeck.events import EventBus
+
+    home, chat, registry, groups, monitor, wake = _setup(tmp_path)
+    bus = EventBus()
+    monitor.bus = bus
+    monitor.start()
+    try:
+        monitor.subscribe_events("scout", ["custom.deploy.done"])
+        bus.publish(Event(type="custom.deploy.done",
+                          payload={"channel": "#ops"}))
+    finally:
+        monitor.stop()
+    assert wake.calls == [("scout", "monitor:event:custom.deploy.done")]
 
 
 def test_monitor_wake_context_is_consumed_by_agent_poll(tmp_path):

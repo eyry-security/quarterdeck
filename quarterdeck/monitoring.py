@@ -193,6 +193,8 @@ class Monitor:
         self._last_wake: dict[tuple[str, str], float] = {}
         self._pending: dict[tuple[str, str], list[dict]] = {}
         self._unsubscribers: list = []
+        self._event_types: set[str] = set()
+        self._started = False
 
     # -- persistence ---------------------------------------------------
     def _load_state(self) -> dict:
@@ -325,10 +327,16 @@ class Monitor:
     def subscribe_events(self, agent: str, event_types: list[str]) -> list[str]:
         key = (agent or "").strip().lower()
         current = set(self.event_subscriptions(agent))
-        current.update(str(item).strip() for item in event_types or [] if str(item).strip())
+        added = {
+            str(item).strip() for item in event_types or [] if str(item).strip()
+        }
+        current.update(added)
         with self._lock:
             self._state.setdefault("events", {})[key] = sorted(current)
         self._save_state()
+        # A subscription configured after startup still needs a bus handler.
+        for event_type in sorted(added):
+            self._subscribe_event_type(event_type)
         return self.event_subscriptions(agent)
 
     def unsubscribe_events(self, agent: str, event_types: list[str]) -> list[str]:
@@ -357,9 +365,21 @@ class Monitor:
         }
 
     # -- lifecycle -----------------------------------------------------
-    def start(self) -> None:
-        if self.bus is None or self._unsubscribers:
+    def _subscribe_event_type(self, event_type: str) -> None:
+        if not self._started or self.bus is None or not event_type:
             return
+        if event_type in self._event_types or event_type == CHAT_MESSAGE:
+            return
+        self._unsubscribers.append(self.bus.subscribe(
+            event_type, self.handle_event,
+            subscriber_id=f"quarterdeck.monitor:{event_type}",
+        ))
+        self._event_types.add(event_type)
+
+    def start(self) -> None:
+        if self.bus is None or self._started:
+            return
+        self._started = True
         self._unsubscribers.append(self.bus.subscribe(
             CHAT_MESSAGE, self.handle_event,
             subscriber_id="quarterdeck.monitor:chat",
@@ -368,10 +388,7 @@ class Monitor:
         for name in self._agent_names():
             types.update(self.event_subscriptions(name))
         for event_type in sorted(types):
-            self._unsubscribers.append(self.bus.subscribe(
-                event_type, self.handle_event,
-                subscriber_id=f"quarterdeck.monitor:{event_type}",
-            ))
+            self._subscribe_event_type(event_type)
 
     def stop(self) -> None:
         for unsubscribe in self._unsubscribers:
@@ -380,6 +397,8 @@ class Monitor:
             except Exception:
                 pass
         self._unsubscribers = []
+        self._event_types.clear()
+        self._started = False
 
     # -- routing -------------------------------------------------------
     def _agent_names(self) -> list[str]:
