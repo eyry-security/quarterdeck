@@ -1452,6 +1452,114 @@ input:focus-visible, a:focus-visible, [role="button"]:focus-visible,
   #mention-menu { left: 10px; right: 10px; bottom: calc(74px + env(safe-area-inset-bottom)); }
   .qd-modal { align-items: flex-end; }
 }
+
+/* ===== Markdown: tables, code, lists, links (Liquid Glass) ===== */
+.msg .text.md { white-space: normal; }
+.md-p { margin: 2px 0; }
+.md-h { margin: 8px 0 4px; font-size: 14px; font-weight: 700; }
+.md-hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+.md-list { margin: 4px 0 4px 20px; padding: 0; }
+.md-list li { margin: 2px 0; }
+.md-quote {
+  margin: 6px 0; padding: 4px 10px;
+  border-left: 2px solid var(--accent2); color: var(--fg-soft);
+}
+.md-code {
+  margin: 8px 0; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: rgba(3, 7, 15, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow-x: auto; white-space: pre; word-break: normal;
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5;
+}
+.md-code code {
+  background: none; border: 0; padding: 0;
+  font: inherit; color: #dbe6ff;
+}
+.msg .text a {
+  color: #9ecbff; text-decoration: underline; text-underline-offset: 2px;
+}
+.msg.own .text a { color: #e0ecff; }
+.md-table-wrap {
+  max-width: 100%; margin: 8px 0; overflow-x: auto;
+  border: 1px solid var(--glass-border); border-radius: 12px;
+  background: rgba(3, 7, 15, 0.28);
+  -webkit-overflow-scrolling: touch;
+}
+.md-table {
+  width: 100%; min-width: 420px; border-collapse: collapse;
+  font-size: 12.5px; line-height: 1.45;
+}
+.md-table th {
+  padding: 8px 10px; text-align: left; white-space: nowrap;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--fg-soft);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.055));
+  border-bottom: 1px solid var(--glass-border);
+}
+.md-table td {
+  padding: 7px 10px; vertical-align: top;
+  border-top: 1px solid var(--line); color: var(--text);
+}
+.md-table tbody tr:first-child td { border-top: 0; }
+.md-table th.num, .md-table td.num {
+  text-align: right; font-family: var(--font-mono); white-space: nowrap;
+}
+.md-table th.center, .md-table td.center { text-align: center; }
+.md-table td .md-cell-clip {
+  display: inline-block; max-width: 32ch; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+}
+.qd-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 8px; border-radius: var(--radius-pill);
+  border: 1px solid var(--glass-border); background: rgba(255, 255, 255, 0.07);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  text-transform: lowercase; white-space: nowrap;
+}
+.qd-pill-open {
+  color: #9ecbff; border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.14);
+}
+.qd-pill-closed {
+  color: #86efac; border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.12);
+}
+.qd-pill-informative {
+  color: #c4b5fd; border-color: rgba(139, 92, 246, 0.42);
+  background: rgba(139, 92, 246, 0.14);
+}
+.qd-pill-pending {
+  color: #fcd34d; border-color: rgba(251, 191, 36, 0.42);
+  background: rgba(251, 191, 36, 0.13);
+}
+.qd-pill-sev-info {
+  color: #93c5fd; border-color: rgba(59, 130, 246, 0.38);
+  background: rgba(59, 130, 246, 0.12);
+}
+.qd-pill-sev-low {
+  color: #86efac; border-color: rgba(74, 222, 128, 0.38);
+  background: rgba(74, 222, 128, 0.11);
+}
+.qd-pill-sev-medium {
+  color: #fcd34d; border-color: rgba(251, 191, 36, 0.42);
+  background: rgba(251, 191, 36, 0.13);
+}
+.qd-pill-sev-high {
+  color: #fdba74; border-color: rgba(251, 146, 60, 0.45);
+  background: rgba(251, 146, 60, 0.14);
+}
+.qd-pill-sev-critical {
+  color: #fda4af; border-color: rgba(255, 107, 122, 0.5);
+  background: rgba(255, 107, 122, 0.15);
+}
+@media (max-width: 900px) {
+  .md-table { min-width: 520px; }
+  .md-table-wrap { margin-left: -2px; margin-right: -2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-table-wrap { scroll-behavior: auto; }
+}
 </style>
 </head>
 <body>
@@ -1552,6 +1660,254 @@ const pendingCid = new Map();
 const newCid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
   : "c" + Date.now().toString(36) + Math.random().toString(36).slice(2);
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+/* ==== QD MARKDOWN RENDERER BEGIN ==== */
+/* Shared by Quarterdeck's standalone UI and the Pro-embedded room. Keep the
+   block between these markers byte-identical in both repositories. */
+function qdEsc(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function qdAttr(value) {
+  return qdEsc(value).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function qdMarkdownInline(value) {
+  const tokens = [];
+  const stash = html => {
+    const key = "\u0000QDMD" + tokens.length + "\u0000";
+    tokens.push(html);
+    return key;
+  };
+  let s = String(value == null ? "" : value);
+  s = s.replace(/`([^`\n]+)`/g, (m, code) => stash("<code>" + qdEsc(code) + "</code>"));
+  s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, href) => {
+    const safe = /^(?:https?:|mailto:|\/|#)/i.test(href) ? href : "#";
+    return stash('<a href="' + qdAttr(safe) +
+      '" target="_blank" rel="noopener noreferrer">' +
+      qdMarkdownInline(label) + "</a>");
+  });
+  s = qdEsc(s);
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
+  s = s.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  s = s.replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
+  s = s.replace(/\u0000QDMD(\d+)\u0000/g, (m, idx) => tokens[Number(idx)] || "");
+  return s;
+}
+function qdSplitRow(line) {
+  let s = String(line == null ? "" : line).trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  const cells = [];
+  let cur = "";
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "\\" && s[i + 1] === "|") { cur += "|"; i++; }
+    else if (ch === "|") { cells.push(cur.trim()); cur = ""; }
+    else cur += ch;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+function qdAlignFor(cell) {
+  const c = String(cell == null ? "" : cell).replace(/\s/g, "");
+  if (c.startsWith(":") && c.endsWith(":")) return "center";
+  if (c.endsWith(":")) return "right";
+  if (c.startsWith(":")) return "left";
+  return "";
+}
+function qdIsSeparator(line) {
+  if (!String(line || "").includes("|")) return false;
+  const cells = qdSplitRow(line);
+  return cells.length > 0 &&
+    cells.every(c => /^:?-{1,}:?$/.test(c.replace(/\s/g, "")));
+}
+function qdIsNumber(value) {
+  return /^[-+]?(?:[$€£]\s*)?#?\d[\d,]*(?:\.\d+)?\s*(?:%|ms|s|h|d|kb|mb|gb|tb)?$/i
+    .test(String(value == null ? "" : value).trim());
+}
+function qdPillClass(value) {
+  const v = String(value == null ? "" : value).trim().toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  const status = {
+    open: "open", closed: "closed", informative: "informative",
+    pending_recheck: "pending", pending: "pending",
+  };
+  if (status[v]) return "qd-pill qd-pill-" + status[v];
+  const severity = {
+    info: "info", informational: "info", low: "low",
+    medium: "medium", high: "high", critical: "critical",
+  };
+  if (severity[v]) return "qd-pill qd-pill-sev-" + severity[v];
+  return "";
+}
+function qdRenderTableCell(value, tag, numeric, align) {
+  const raw = String(value == null ? "" : value).trim();
+  const cls = numeric ? "num" : (align === "center" ? "center" : "");
+  const attr = cls ? ' class="' + cls + '"' : "";
+  if (tag === "th") return "<th" + attr + ">" + qdMarkdownInline(raw) + "</th>";
+  const pill = qdPillClass(raw);
+  let inner;
+  if (pill) {
+    inner = '<span class="' + pill + '">' + qdEsc(raw) + "</span>";
+  } else if (raw.length > 80) {
+    inner = '<span class="md-cell-clip" title="' + qdAttr(raw) + '">' +
+      qdMarkdownInline(raw.slice(0, 77) + "\u2026") + "</span>";
+  } else {
+    inner = qdMarkdownInline(raw);
+  }
+  return "<td" + attr + ">" + inner + "</td>";
+}
+function qdRenderTable(headers, aligns, rows) {
+  const width = headers.length;
+  const body = rows.map(row => {
+    const cells = row.slice(0, width);
+    while (cells.length < width) cells.push("");
+    return cells;
+  });
+  const numeric = headers.map((_, ci) => {
+    if (aligns[ci] === "right") return true;
+    if (aligns[ci] === "left" || aligns[ci] === "center") return false;
+    const values = body.map(row => String(row[ci] == null ? "" : row[ci]).trim())
+      .filter(Boolean);
+    return values.length > 0 && values.every(qdIsNumber);
+  });
+  return '<div class="md-table-wrap"><table class="md-table"><thead><tr>' +
+    headers.map((h, ci) =>
+      qdRenderTableCell(h, "th", numeric[ci], aligns[ci])).join("") +
+    "</tr></thead><tbody>" +
+    body.map(row => "<tr>" + row.map((v, ci) =>
+      qdRenderTableCell(v, "td", numeric[ci], aligns[ci])).join("") +
+      "</tr>").join("") +
+    "</tbody></table></div>";
+}
+function qdIsBlockStart(lines, i) {
+  const line = lines[i] || "";
+  if (/^\s*(?:```+|~~~+)/.test(line)) return true;
+  if (/^\s*#{1,6}\s+\S/.test(line)) return true;
+  if (/^\s*>\s?/.test(line)) return true;
+  if (/^\s*(?:[-*+]|\d+[.)])\s+\S/.test(line)) return true;
+  if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) return true;
+  if (line.includes("|") && qdIsSeparator(lines[i + 1] || "")) return true;
+  return false;
+}
+function qdHasMarkdown(value) {
+  const src = String(value == null ? "" : value);
+  if (!src) return false;
+  if (/(?:^|\n)\s*(?:```|~~~)/.test(src)) return true;
+  if (/(?:^|\n)\s*#{1,6}\s+\S/.test(src)) return true;
+  if (/(?:^|\n)\s*>\s?/.test(src)) return true;
+  if (/(?:^|\n)\s*(?:[-*+]|\d+[.)])\s+\S/.test(src)) return true;
+  if (/(?:^|\n)\s*([-*_])(?:\s*\1){2,}\s*(?:\n|$)/.test(src)) return true;
+  if (/`[^`\n]+`/.test(src)) return true;
+  if (/\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~/.test(src)) return true;
+  if (/\[[^\]\n]+\]\([^)\s]+\)/.test(src)) return true;
+  const lines = src.split("\n");
+  for (let i = 0; i + 1 < lines.length; i++) {
+    if (lines[i].includes("|") && qdIsSeparator(lines[i + 1])) return true;
+  }
+  return false;
+}
+function qdMarkdownToHtml(value) {
+  const src = String(value == null ? "" : value).replace(/\r\n?/g, "\n");
+  if (!qdHasMarkdown(src)) return qdEsc(src);
+  const lines = src.split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const fence = line.match(/^\s*(```+|~~~+)\s*([\w+-]*)\s*$/);
+    if (fence) {
+      const marker = fence[1][0];
+      const lang = fence[2] || "";
+      const close = marker === "`" ? /^\s*`{3,}\s*$/ : /^\s*~{3,}\s*$/;
+      const buf = [];
+      i++;
+      while (i < lines.length && !close.test(lines[i])) { buf.push(lines[i]); i++; }
+      if (i < lines.length) i++;
+      const cls = "md-code" + (lang ? " language-" + lang.replace(/[^\w+-]/g, "") : "");
+      out.push('<pre class="' + cls + '"><code>' +
+        qdEsc(buf.join("\n")) + "</code></pre>");
+      continue;
+    }
+    if (line.includes("|") && qdIsSeparator(lines[i + 1] || "")) {
+      const headers = qdSplitRow(line);
+      const aligns = qdSplitRow(lines[i + 1]).map(qdAlignFor);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].trim() !== "" &&
+             lines[i].includes("|")) {
+        rows.push(qdSplitRow(lines[i]));
+        i++;
+      }
+      out.push(qdRenderTable(headers, aligns, rows));
+      continue;
+    }
+    if (!line.trim()) { i++; continue; }
+    const heading = line.match(/^\s*(#{1,6})\s+(.*)$/);
+    if (heading) {
+      const level = heading[1].length;
+      out.push("<h" + level + ' class="md-h">' +
+        qdMarkdownInline(heading[2]) + "</h" + level + ">");
+      i++;
+      continue;
+    }
+    if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+      out.push('<hr class="md-hr">');
+      i++;
+      continue;
+    }
+    if (/^\s*>\s?/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+        buf.push(lines[i].replace(/^\s*>\s?/, ""));
+        i++;
+      }
+      out.push('<blockquote class="md-quote">' +
+        qdMarkdownToHtml(buf.join("\n")) + "</blockquote>");
+      continue;
+    }
+    const ordered = /^\s*\d+[.)]\s+/.test(line);
+    if (ordered || /^\s*[-*+]\s+/.test(line)) {
+      const itemRe = ordered ? /^\s*\d+[.)]\s+(.*)$/ : /^\s*[-*+]\s+(.*)$/;
+      const items = [];
+      let buf = [];
+      while (i < lines.length) {
+        const item = lines[i].match(itemRe);
+        if (item) {
+          if (buf.length) items.push(buf.join("\n"));
+          buf = [item[1]];
+          i++;
+        } else if (buf.length && /^\s{2,}\S/.test(lines[i])) {
+          buf.push(lines[i].replace(/^\s+/, ""));
+          i++;
+        } else {
+          break;
+        }
+      }
+      if (buf.length) items.push(buf.join("\n"));
+      const tag = ordered ? "ol" : "ul";
+      out.push("<" + tag + ' class="md-list">' +
+        items.map(item => "<li>" + qdMarkdownInline(item) + "</li>").join("") +
+        "</" + tag + ">");
+      continue;
+    }
+    const para = [];
+    while (i < lines.length && lines[i].trim() !== "" &&
+           !qdIsBlockStart(lines, i)) {
+      para.push(lines[i]);
+      i++;
+    }
+    out.push('<p class="md-p">' +
+      para.map(qdMarkdownInline).join("<br>") + "</p>");
+  }
+  return out.join("");
+}
+function qdTextIsMarkdown(value) {
+  return qdHasMarkdown(String(value == null ? "" : value).replace(/\r\n?/g, "\n"));
+}
+/* ==== QD MARKDOWN RENDERER END ==== */
 const fmtTs = ts => new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
 const fmtTime = ts => new Date(ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
 const fmtDivider = ts => {
@@ -1717,9 +2073,11 @@ function renderMsg(m, kind) {
   const avatarColor = member ? (member.color || colorFor(m.author)) : colorFor(m.author);
   const captain = isAgent(m.author) && isCaptainName(m.author)
     ? '<span class="captain-badge">Captain</span>' : "";
+  const rich = qdTextIsMarkdown(text);
+  const body = rich ? qdMarkdownToHtml(text) : esc(text);
   div.innerHTML = `<div class="meta"><span class="avatar ${cls}" style="background:${avatarColor}" aria-hidden="true">${esc(initial)}</span>` +
     `<span class="author ${cls}">${esc(m.author)}</span>${captain}</div>` +
-    `<div class="text">${esc(text)}</div>` +
+    `<div class="text${rich ? " md" : ""}">${body}</div>` +
     `<span class="msg-time">${esc(fmtTime(m.ts))}</span>`;
   return div;
 }
