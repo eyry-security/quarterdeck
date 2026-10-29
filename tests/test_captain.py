@@ -265,3 +265,9 @@ class TestCaptainRespawn:
                 await asyncio.wait_for(boot, timeout=10)
 
         asyncio.run(main())
+
+
+def test_prompt_guidance_requests_markdown_tables(tmp_path):
+    assert "markdown table" in SELF_SYSTEM_PROMPT.lower()
+    runner = AgentRunner("scout", home=tmp_path / "qd")
+    assert "markdown table" in runner._system_prompt().lower()

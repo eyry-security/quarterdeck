@@ -164,8 +164,10 @@ def _call(tool, **kwargs):
 def test_list_scopes(tools):
     out = _call(tools["list_scopes"])
     assert "*.example.com" in out
-    assert "mode=ownership" in out
-    assert "cadence=daily" in out
+    assert "ownership" in out
+    assert "daily" in out
+    assert "| ID | Pattern | Mode | Verification | Cadence | Hosts |" in out
+    assert "| ---: | --- |" in out
 
 
 def test_list_hosts_by_pattern(tools, fake):
@@ -178,6 +180,8 @@ def test_scan_status_includes_live_progress(tools, fake):
     out = _call(tools["scan_status"], scope="1")
     assert "live:" in out
     assert "stage=probing" in out
+    assert "| Run | Kind | Status | Stage | Probed | Found | Findings |" in out
+    assert "| run-10 | full | running | probing | 1 | 2 | 0 |" in out
     assert ("get_scan", "run-10") in fake.calls
 
 
@@ -187,12 +191,31 @@ def test_list_findings_summary_and_filters(tools):
     assert "#7" in out
     assert "#8" not in out
     assert "hidden list detail" not in out
+    assert "| ID | Severity | Status | Host | Title | Scope |" in out
+    assert "| #7 | high | open | a.example.com |" in out
 
 
 def test_list_findings_all_scopes(tools):
     out = _call(tools["list_findings"], status="closed")
     assert "#8" in out
     assert "#7" not in out
+
+
+def test_summary_tools_emit_markdown_tables_not_json(tools):
+    calls = {
+        "list_scopes": {},
+        "scan_status": {"scope": "1"},
+        "list_findings": {"scope": "1"},
+        "list_schedules": {},
+    }
+    for name, kwargs in calls.items():
+        out = _call(tools[name], **kwargs)
+        lines = out.splitlines()
+        assert "{" not in out and "}" not in out
+        assert ":" in lines[0]
+        assert any(line.startswith("| ") for line in lines)
+        assert any(line.startswith("| ---") for line in lines)
+        assert len(lines) >= 3
 
 
 def test_get_finding_full_record_and_history(tools):
@@ -218,8 +241,9 @@ def test_start_scan_refuses_when_running(tools, fake):
 
 def test_list_schedules_for_all_scopes(tools):
     out = _call(tools["list_schedules"])
-    assert "cadence=daily" in out
-    assert "enabled=yes" in out
+    assert "daily" in out
+    assert "| ID | Pattern | Cadence | Enabled | Next scan |" in out
+    assert "| #1 | *.example.com | daily | yes |" in out
 
 
 def test_set_schedule_enabled_and_disabled(tools, fake):
