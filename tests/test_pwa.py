@@ -157,6 +157,9 @@ class TestServiceWorker:
         assert "You're offline" in response.text
         assert 'id="retry"' in response.text
         assert "Retry connection" in response.text
+        assert "window.location.reload()" not in response.text
+        assert response.text.count('window.location.href = "/"') == 2
+        assert "Still offline — check your connection." in response.text
 
 
 class TestInstallHint:

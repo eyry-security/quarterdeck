@@ -176,12 +176,12 @@ button:focus-visible {
   var status = document.getElementById("status");
   function retry() {
     status.textContent = navigator.onLine ? "Reconnecting…" : "Still offline — check your connection.";
-    if (navigator.onLine) window.location.reload();
+    if (navigator.onLine) window.location.href = "/";
   }
   button.addEventListener("click", retry);
   window.addEventListener("online", function () {
     status.textContent = "Back online — reconnecting…";
-    window.location.reload();
+    window.location.href = "/";
   });
   window.addEventListener("offline", function () {
     status.textContent = "Still offline — check your connection.";
