@@ -240,8 +240,6 @@ def _md_table(headers, rows, right=()) -> str:
 def _scope_status(item: dict) -> str:
     if item.get("verified"):
         return "verified"
-    if item.get("verification_required"):
-        return "verification needed"
     return "unverified"
 
 

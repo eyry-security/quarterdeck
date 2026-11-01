@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from quarterdeck.platform_tools import ProAPIError, platform_tools
+from quarterdeck.platform_tools import ProAPIError, _scope_status, platform_tools
 
 
 class FakePro:
@@ -168,6 +168,14 @@ def test_list_scopes(tools):
     assert "daily" in out
     assert "| ID | Pattern | Mode | Verification | Cadence | Hosts |" in out
     assert "| ---: | --- |" in out
+
+
+def test_scope_status_never_reports_verification_needed():
+    assert _scope_status({"verified": True}) == "verified"
+    assert _scope_status({"verification_required": True}) == "unverified"
+    assert _scope_status({"verified": False,
+                          "verification_required": True}) == "unverified"
+    assert _scope_status({}) == "unverified"
 
 
 def test_list_hosts_by_pattern(tools, fake):
