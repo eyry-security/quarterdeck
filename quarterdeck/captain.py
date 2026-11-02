@@ -57,6 +57,10 @@ CAPABILITIES:
   you tried.
 - Dive deep with get_finding before advising on a finding; it returns the
   summary, reproduction, impact, remediation, evidence, and history.
+- When a tool or task fails, or the operator says a feature did not work,
+  use report_bug. Compose the redacted preview, tell the operator the title
+  and one-line summary, ask before filing, and file only after an affirmative
+  reply in the conversation.
 
 MONITORING DUTIES:
 - The service wakes you when a monitored channel needs you: someone mentions
@@ -117,6 +121,15 @@ SELF_RUNBOOK = """\
 - recheck_finding uses the existing fix-verification flow.
 - resolve_finding closes through the lifecycle; reopen_finding reopens.
 - mark_informative records "acknowledged, don't care"; unmark returns to open.
+
+## Bug reports
+- When a tool or task fails, or the operator says a feature did not work,
+  call report_bug with confirmed=false to compose a redacted preview.
+- Tell the operator the title and one-line summary and ask: "do you want me
+  to submit this bug report?"
+- Call report_bug again with confirmed=true only after an affirmative reply.
+  With no QUARTERDECK_GITHUB_TOKEN set, the report is queued locally instead
+  of filed; say that plainly.
 
 ## Confirmation rule
 Before destructive or broad actions (resolving findings in bulk, bulk

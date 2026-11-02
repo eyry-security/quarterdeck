@@ -333,8 +333,10 @@ def quarterdeck_tools(agent_name: str, home: Path | None = None,
                 qd_deregister_agent,
             )
         )
-    # Captain only: the Eyry Pro platform toolset. Other agents stay room-bound.
+    # Captain only: bug reporting and the Eyry Pro platform toolset.
     if is_captain(me):
+        from .bug_report import report_bug_tool
         from .platform_tools import platform_tools
+        tools.append(report_bug_tool(me, home=home))
         tools.extend(platform_tools(me, home=home))
     return tools

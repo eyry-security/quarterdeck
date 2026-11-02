@@ -28,6 +28,24 @@ LangChain tools bound to each agent's identity. Chat tools come from
 | `quarterdeck_set_agent_model` | agent, model | Change another agent's model |
 | `quarterdeck_deregister_agent` | name | Stop loop, retire, archive files |
 
+## Captain-only
+
+| Tool | Args | What it does |
+|------|------|--------------|
+| `report_bug` | source_surface, error_type, error_message, confirmed, tool_name="", task_name="", recent_logs="", summary="" | Compose a redacted bug report; with `confirmed=false` return the preview only, with `confirmed=true` file it (or queue it locally when no token is set) |
+
+`report_bug` flow: detect a failed tool/task or an operator complaint, call
+with `confirmed=false`, show the operator the title and one-line summary, ask
+"do you want me to submit this bug report?", then call again with
+`confirmed=true` only after an affirmative reply. Filing searches open issues
+for the report's signature marker, comments "seen again" on a duplicate, and
+otherwise creates a new issue. Reports are redacted first. Repo routing is by
+source surface: captain/platform issues go to `eyry-pro`; component tools go
+to their own repos; Quarterdeck's own issues go to `quarterdeck`. Without
+`QUARTERDECK_GITHUB_TOKEN`, reports are appended to
+`<state-dir>/bug_reports/queue.jsonl` and the result says they are queued, not
+filed.
+
 ## Self-maintenance (own files)
 
 | Tool | Args | What it does |

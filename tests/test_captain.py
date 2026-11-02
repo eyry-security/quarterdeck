@@ -196,7 +196,7 @@ class TestCaptainModelAndPersona:
         runner = AgentRunner(SELF_NAME, home=tmp_path / "qd")
         names = {tool.name for tool in runner.all_tools()}
         for expected in ("quarterdeck_register_agent", "quarterdeck_wake",
-                         "quarterdeck_dm", "quarterdeck_list",
+                         "quarterdeck_dm", "quarterdeck_list", "report_bug",
                          "list_scopes", "list_hosts", "scan_status",
                          "list_findings", "get_finding", "start_scan",
                          "list_schedules", "set_schedule", "recheck_finding",
@@ -209,6 +209,7 @@ class TestCaptainModelAndPersona:
         names = {tool.name for tool in runner.all_tools()}
         assert "quarterdeck_register_agent" not in names
         assert "quarterdeck_wake" not in names
+        assert "report_bug" not in names
         for platform_tool in ("list_scopes", "list_hosts", "scan_status",
                               "list_findings", "get_finding", "start_scan",
                               "list_schedules", "set_schedule",
