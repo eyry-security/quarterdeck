@@ -14,15 +14,26 @@ recon toolchain baked in so agents don't apt-get on every boot.
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
-from pinnace.sandbox import DockerSandbox, SandboxError
+from pinnace.sandbox import (
+    DEFAULT_SANDBOX_CPUS,
+    DEFAULT_SANDBOX_MEMORY,
+    SANDBOX_CPUS_ENV,
+    SANDBOX_MEMORY_ENV,
+    DockerSandbox,
+    SandboxError,
+    _nano_cpus,
+)
 
 from .agent_registry import home_dir
 
 IMAGE = "qd-agent:latest"
 WORKDIR = "/work"
+AGENT_MEMORY_ENV = "QD_AGENT_MEMORY"
+AGENT_CPUS_ENV = "QD_AGENT_CPUS"
 
 
 def _safe(name: str) -> str:
@@ -39,7 +50,8 @@ class PersistentDockerSandbox(DockerSandbox):
         image: str = IMAGE,
         workdir: str = WORKDIR,
         network: str | None = None,
-        mem_limit: str = "1g",
+        mem_limit: str | None = None,
+        cpus: str | None = None,
     ) -> None:
         # DockerSandbox.__init__ starts the container without volumes, so we
         # replicate its setup here with a host volume mounted at /work.
@@ -60,7 +72,18 @@ class PersistentDockerSandbox(DockerSandbox):
         self.workdir = workdir
         self._image = image
         self._network = network
-        self._mem_limit = mem_limit
+        self._mem_limit = (
+            str(mem_limit).strip() if mem_limit
+            else (os.environ.get(AGENT_MEMORY_ENV)
+                  or os.environ.get(SANDBOX_MEMORY_ENV)
+                  or DEFAULT_SANDBOX_MEMORY).strip()
+        )
+        self._cpus = (
+            str(cpus).strip() if cpus
+            else (os.environ.get(AGENT_CPUS_ENV)
+                  or os.environ.get(SANDBOX_CPUS_ENV)
+                  or DEFAULT_SANDBOX_CPUS).strip()
+        )
         self._client = client
         self._start_container()
 
@@ -71,6 +94,7 @@ class PersistentDockerSandbox(DockerSandbox):
             "detach": True,
             "working_dir": self.workdir,
             "mem_limit": self._mem_limit,
+            "nano_cpus": _nano_cpus(self._cpus),
             "stdin_open": True,
             "volumes": {str(self.host_workdir): {"bind": self.workdir, "mode": "rw"}},
         }

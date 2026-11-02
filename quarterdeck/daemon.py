@@ -108,6 +108,11 @@ class Daemon:
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
+        if runner is not None:
+            try:
+                runner.release_sandbox()
+            except Exception:
+                pass
         try:
             self.registry.retire(target)
         except Exception:
@@ -294,6 +299,11 @@ class Daemon:
         for task in self.tasks.values():
             task.cancel()
         await asyncio.gather(*self.tasks.values(), return_exceptions=True)
+        for runner in list(self.runners.values()):
+            try:
+                runner.release_sandbox()
+            except Exception:
+                pass
         print("[daemon] stopped", flush=True)
 
     # ------------------------------------------------------------------

@@ -446,6 +446,24 @@ class AgentRunner:
         self._sandbox_kind = kind
         return self._sandbox
 
+    def release_sandbox(self) -> None:
+        """Remove this agent's task sandbox container, keeping host /work.
+
+        A qd-agent container is owned by the task that created it. Persistent
+        agent state lives in the host-mounted workdir, so removing the
+        container at task end loses nothing.
+        """
+        sandbox = self._sandbox
+        self._sandbox = None
+        self._sandbox_kind = None
+        self._pinnace = None
+        self._pinnace_model = None
+        if sandbox is not None:
+            try:
+                sandbox.close()
+            except Exception:
+                pass
+
     def reset_environment(self) -> str:
         """Wipe /work and rebuild the sandbox from the clean image."""
         sb = self.sandbox()
@@ -638,34 +656,39 @@ class AgentRunner:
                      f"📥 waking on: {context[:160]}…",
                      home=self.home)
         try:
-            agent = await asyncio.to_thread(self.build_pinnace)
-        except Exception as e:
-            self._note(f"pinnace build failed: {type(e).__name__}: {e}")
-            return
+            try:
+                agent = await asyncio.to_thread(self.build_pinnace)
+            except Exception as e:
+                self._note(f"pinnace build failed: {type(e).__name__}: {e}")
+                return
 
-        def _run():
-            # Same per-agent file lock as scheduler runs: daemon turns and
-            # scheduled turns share one durable session and never overlap.
-            with file_lock(self.home / "locks" / f"agent-{agent_key(self.name)}.lock"):
-                return agent.run(
-                    context + "\n\n(Use quarterdeck_think to narrate as you work. "
-                    "When you learn something durable, quarterdeck_memory_write it.)"
-                )
+            def _run():
+                # Same per-agent file lock as scheduler runs: daemon turns and
+                # scheduled turns share one durable session and never overlap.
+                with file_lock(self.home / "locks" / f"agent-{agent_key(self.name)}.lock"):
+                    return agent.run(
+                        context + "\n\n(Use quarterdeck_think to narrate as you work. "
+                        "When you learn something durable, quarterdeck_memory_write it.)"
+                    )
 
-        try:
-            result = await asyncio.to_thread(_run)
-        except Exception as e:
-            self._note(f"run failed: {type(e).__name__}: {e}")
-            post_thought(self.name, f"⚠️ run failed: {type(e).__name__}: {e}",
-                         home=self.home)
-            return
-        # Usage goes to usage.jsonl only (credits dashboard) — never surfaced
-        # as a chat/thought message.
-        try:
-            usage_mod.record_pinnace_usage(
-                self.name, getattr(result, "usage", None) or [], home=self.home)
-        except Exception:
-            pass
+            try:
+                result = await asyncio.to_thread(_run)
+            except Exception as e:
+                self._note(f"run failed: {type(e).__name__}: {e}")
+                post_thought(self.name, f"⚠️ run failed: {type(e).__name__}: {e}",
+                             home=self.home)
+                return
+            # Usage goes to usage.jsonl only (credits dashboard) — never surfaced
+            # as a chat/thought message.
+            try:
+                usage_mod.record_pinnace_usage(
+                    self.name, getattr(result, "usage", None) or [], home=self.home)
+            except Exception:
+                pass
+        finally:
+            # The segment/task owns its container: remove it on success,
+            # failure, timeout, or cancellation.
+            self.release_sandbox()
 
     def _note(self, text: str) -> None:
         """Best-effort note to the thought stream (daemon visibility)."""
