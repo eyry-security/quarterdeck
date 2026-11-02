@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from fnmatch import fnmatchcase
 from typing import Callable
 
 from langchain_core.tools import StructuredTool
@@ -200,6 +201,41 @@ def _when(value) -> str:
         return str(value)
 
 
+def _norm_scope(value) -> str:
+    text = str(value or "").strip().lower()
+    return text.rstrip(".")
+
+
+def _scope_pattern(item: dict) -> str:
+    return str(item.get("pattern") or item.get("scope") or "").strip()
+
+
+def _scope_candidates(raw: str) -> list[str]:
+    """Text forms a human or agent may use to name one scope."""
+    candidates = []
+    plain = raw.split()[0] if raw.split() else raw
+    if "://" in plain:
+        host = urllib.parse.urlsplit(plain).hostname or ""
+        if host:
+            candidates.append(host)
+    plain = plain.split("/", 1)[0]
+    candidates.append(plain)
+    lowered = _norm_scope(plain)
+    candidates.append(lowered)
+    if lowered.startswith("*."):
+        candidates.append(lowered[2:])
+    if lowered.startswith("."):
+        candidates.append(lowered[1:])
+    seen = set()
+    out = []
+    for value in candidates:
+        value = _norm_scope(value)
+        if value and value not in seen:
+            seen.add(value)
+            out.append(value)
+    return out
+
+
 def _resolve_scope(client, scope) -> dict:
     raw = str(scope or "").strip()
     if not raw:
@@ -213,11 +249,40 @@ def _resolve_scope(client, scope) -> dict:
                     return item
             except (TypeError, ValueError):
                 continue
-    lowered = raw.lower()
+    candidates = _scope_candidates(raw)
     for item in scopes:
-        if str(item.get("pattern", "")).lower() == lowered:
-            return item
-    raise ProAPIError(f"scope {raw!r} not found; use list_scopes first")
+        pattern = _norm_scope(_scope_pattern(item))
+        if not pattern:
+            continue
+        for candidate in candidates:
+            if candidate == pattern:
+                return item
+            if fnmatchcase(candidate, pattern):
+                return item
+            base = pattern[2:] if pattern.startswith("*.") else pattern
+            if candidate == base:
+                return item
+    # Last resort: a unique substring/alias match. Ambiguity is an error, not
+    # a guess, so the captain cannot silently operate on the wrong scope.
+    hits = []
+    for item in scopes:
+        pattern = _norm_scope(_scope_pattern(item))
+        if not pattern:
+            continue
+        aliases = [pattern]
+        aliases.extend(_norm_scope(item.get(key)) for key in
+                       ("name", "label", "scope", "target"))
+        if any(alias and any(alias in c or c in alias for c in candidates)
+               for alias in aliases):
+            hits.append(item)
+    if len(hits) == 1:
+        return hits[0]
+    available = ", ".join(
+        f"#{item.get('id')} {_scope_pattern(item) or '?'}" for item in scopes
+    ) or "none"
+    suffix = f" (available: {available})" if scopes else ""
+    raise ProAPIError(
+        f"scope {raw!r} not found or is ambiguous; use list_scopes first{suffix}")
 
 
 def _md_cell(value) -> str:
@@ -304,6 +369,29 @@ def platform_tools(agent_name: str, home=None, client=None) -> list:
              "Findings", "Last scan"],
             rows, right=(0, 5, 6),
         )
+
+    def describe_scope(scope: str) -> str:
+        """Resolve a scope reference to its canonical identity and data."""
+        try:
+            item = _resolve_scope(client, scope)
+        except Exception as exc:  # noqa: BLE001
+            return f"error: {exc}"
+        last = item.get("last_scan") or {}
+        rows = [[
+            f"#{item.get('id')}",
+            _scope_pattern(item) or "-",
+            item.get("mode") or "-",
+            _scope_status(item),
+            item.get("scan_cadence") or "off",
+            item.get("hosts_count", 0),
+            item.get("findings_count", 0),
+            _scan_state(last),
+        ]]
+        return ("scope identity (use this exact pattern when referring to it):\n\n"
+                + _md_table(
+                    ["ID", "Pattern", "Mode", "Verification", "Cadence",
+                     "Hosts", "Findings", "Last scan"],
+                    rows, right=(0, 5, 6)))
 
     def list_hosts(scope: str, limit: int = 50, offset: int = 0) -> str:
         """List discovered hosts for a scope. Args: scope (id or pattern), limit, offset."""
@@ -613,6 +701,13 @@ def platform_tools(agent_name: str, home=None, client=None) -> list:
             "List Eyry Pro recon scopes with mode, verification, cadence, "
             "host/finding counts and latest scan state.",
             list_scopes,
+        ),
+        _make_tool(
+            "describe_scope",
+            "Resolve an id, pattern, wildcard, hostname or URL to the "
+            "canonical Eyry Pro scope identity (id + exact pattern) plus its "
+            "data. Use this before referring to a scope by name. Args: scope.",
+            describe_scope,
         ),
         _make_tool(
             "list_hosts",

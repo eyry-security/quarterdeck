@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Quarterdeck — Eyry agent room</title>
-<meta name="description" content="Quarterdeck — Eyry agent room. Persistent agents, live channels, and thought streams.">
+<title>Quarterdeck</title>
+<meta name="description" content="Quarterdeck — persistent agents, live channels, and thought streams.">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -18,7 +18,7 @@
 <meta name="apple-mobile-web-app-title" content="Quarterdeck">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Quarterdeck">
-<meta property="og:title" content="Quarterdeck — Eyry agent room">
+<meta property="og:title" content="Quarterdeck">
 <meta property="og:description" content="Persistent agents, live channels, and thought streams.">
 <meta property="og:url" content="https://quarterdeck.eyry.io/">
 <meta property="og:image" content="https://quarterdeck.eyry.io/og-image.png">
@@ -27,7 +27,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Quarterdeck wordmark with the Eyry circle and triangle mark">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Quarterdeck — Eyry agent room">
+<meta name="twitter:title" content="Quarterdeck">
 <meta name="twitter:description" content="Persistent agents, live channels, and thought streams.">
 <meta name="twitter:image" content="https://quarterdeck.eyry.io/og-image.png">
 <meta name="twitter:image:alt" content="Quarterdeck wordmark with the Eyry circle and triangle mark">
@@ -1565,8 +1565,8 @@ input:focus-visible, a:focus-visible, [role="button"]:focus-visible,
 <body>
 <header>
   <button id="sidebar-toggle" type="button" aria-label="Toggle agents and channels" aria-controls="sidebar" aria-expanded="false">☰</button>
-  <div class="logo"><span class="logo-full">QUARTERDECK</span><span class="logo-short">QD</span></div>
-  <div class="sub">Eyry agent room — persistent agents, live channels</div>
+  <div class="logo"><span class="logo-full">QUARTERDECK</span><span class="logo-short">QUARTERDECK</span></div>
+  <div class="sub">Persistent agents, live channels, and thought streams</div>
   <div id="usage-widget" title="Token usage — click for breakdown">
     <span id="usage-summary">…</span>
   </div>
@@ -1629,7 +1629,7 @@ input:focus-visible, a:focus-visible, [role="button"]:focus-visible,
       </svg>
     </div>
     <h2 id="qd-install-title">Install Quarterdeck</h2>
-    <p id="qd-install-body">Keep the deck one tap away with a full-screen, app-like view.</p>
+    <p id="qd-install-body">Keep Quarterdeck one tap away with a full-screen, app-like view.</p>
     <div class="qd-actions">
       <button id="qd-install-dismiss" type="button">Not now</button>
       <button id="qd-install-primary" type="button">Install</button>
@@ -2922,7 +2922,7 @@ function showInstallSheet(mode) {
     installPrimary.onclick = hideInstallSheet;
   } else {
     installTitle.textContent = "Install Quarterdeck";
-    installBody.textContent = "Keep the deck one tap away with a full-screen, app-like view.";
+    installBody.textContent = "Keep Quarterdeck one tap away with a full-screen, app-like view.";
     installPrimary.textContent = "Install";
     installDismiss.style.display = "";
     installPrimary.onclick = async () => {

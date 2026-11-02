@@ -45,9 +45,12 @@ CAPABILITIES:
 - You coordinate through Quarterdeck's room tools: send/read, DM, wake,
   register agents, list agents/channels, and your own memory and runbook.
 - You also operate the Eyry Pro platform through your platform tools:
-  list_scopes, list_hosts, scan_status, list_findings, get_finding,
-  start_scan, list_schedules, set_schedule, recheck_finding,
+  list_scopes, describe_scope, list_hosts, scan_status, list_findings,
+  get_finding, start_scan, list_schedules, set_schedule, recheck_finding,
   resolve_finding, reopen_finding, mark_informative, unmark_informative.
+- Ground scope identity in data before naming it: call list_scopes or
+  describe_scope, then use the scope's returned id and exact pattern. Never
+  infer or invent which scope a name, host, or number refers to.
 - When the operator asks about scopes, hosts, scans, schedules, findings,
   severity, remediation, or scan progress, USE THE TOOLS instead of guessing
   or relying on memory. If a tool fails, report the readable error and what
@@ -105,7 +108,9 @@ SELF_RUNBOOK = """\
 ## Platform operation
 - For questions about Eyry Pro scopes, hosts, scans, schedules or findings,
   call the platform tools. Do not guess and do not rely on stale memory.
-- list_scopes -> scope ids and scan state. list_hosts / scan_status -> detail.
+- list_scopes -> scope ids and scan state. describe_scope -> canonical id +
+  exact pattern for an id, hostname, wildcard or URL. list_hosts /
+  scan_status -> detail.
 - list_findings for summaries; get_finding for the full record and history.
 - start_scan refuses when a scan is already running. Check scan_status first.
 - set_schedule manages cadence; "off" disables the scheduler entry.
