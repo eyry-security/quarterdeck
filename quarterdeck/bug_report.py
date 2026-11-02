@@ -544,9 +544,15 @@ def _response_parts(response: Any) -> tuple[int, Any]:
     return int(status), data
 
 
+def _state_dir(home: Path | str | None) -> Path:
+    if home:
+        return Path(home)
+    raw = os.environ.get("QD_STATE_DIR", "").strip()
+    return Path(raw) if raw else home_dir()
+
+
 def _queue_path(home: Path | str | None) -> Path:
-    base = Path(home) if home else home_dir()
-    return base / QUEUE_DIR / QUEUE_FILE
+    return _state_dir(home) / QUEUE_DIR / QUEUE_FILE
 
 
 def queue_report(report: BugReport, home: Path | str | None,

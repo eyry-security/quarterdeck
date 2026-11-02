@@ -248,6 +248,17 @@ def test_no_token_queues_locally_and_says_not_filed(tmp_path):
     assert record["report"]["title"] == report.title
 
 
+def test_queue_defaults_to_qd_state_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("QD_STATE_DIR", str(tmp_path))
+    client = GitHubIssuesClient(token="", transport=FakeTransport())
+    report = compose_report(_context())
+
+    result = client.file(report)
+
+    assert result.status == "queued"
+    assert (tmp_path / "bug_reports" / "queue.jsonl").exists()
+
+
 def test_unconfirmed_tool_call_never_files_or_queues(tmp_path):
     transport = FakeTransport()
     client = GitHubIssuesClient(token="test-token", transport=transport,
