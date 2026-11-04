@@ -1671,6 +1671,12 @@ function qdEsc(value) {
 function qdAttr(value) {
   return qdEsc(value).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
+function qdSafeHref(value) {
+  const href = String(value == null ? "" : value).trim();
+  if (!href) return "#";
+  if (/^[#/]/.test(href)) return href;
+  return /^https?:\/\//i.test(href) ? href : "#";
+}
 function qdMarkdownInline(value) {
   const tokens = [];
   const stash = html => {
@@ -1681,8 +1687,7 @@ function qdMarkdownInline(value) {
   let s = String(value == null ? "" : value);
   s = s.replace(/`([^`\n]+)`/g, (m, code) => stash("<code>" + qdEsc(code) + "</code>"));
   s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, href) => {
-    const safe = /^(?:https?:|mailto:|\/|#)/i.test(href) ? href : "#";
-    return stash('<a href="' + qdAttr(safe) +
+    return stash('<a href="' + qdAttr(qdSafeHref(href)) +
       '" target="_blank" rel="noopener noreferrer">' +
       qdMarkdownInline(label) + "</a>");
   });
