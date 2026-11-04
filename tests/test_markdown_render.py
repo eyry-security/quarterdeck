@@ -37,6 +37,16 @@ print("hi")
 - two
 """
 
+FENCED_FINDING = """Reproduction steps for the exposed endpoint:
+
+```bash
+curl -sS http://example.com/ -o page.html
+echo "**not bold** <b>not html</b>"
+```
+
+The command saves the page for comparison.
+"""
+
 
 @pytest.fixture(scope="module")
 def renderer():
@@ -111,6 +121,30 @@ def test_code_lists_and_links_use_the_same_renderer(renderer):
             'rel="noopener noreferrer">link</a>') in html
     assert '<pre class="md-code language-python"><code>print("hi")</code></pre>' in html
     assert '<ul class="md-list"><li>one</li><li>two</li></ul>' in html
+
+
+def test_finding_summary_renders_fenced_code_verbatim(renderer):
+    rendered = _render(renderer, FENCED_FINDING)
+    html = rendered["html"]
+
+    assert rendered["markdown"] is True
+    assert html.count("<pre") == 1
+    assert ('<pre class="md-code language-bash"><code>'
+            'curl -sS http://example.com/ -o page.html\n'
+            'echo "**not bold** &lt;b&gt;not html&lt;/b&gt;"'
+            '</code></pre>') in html
+    assert '<p class="md-p">Reproduction steps for the exposed endpoint:</p>' in html
+    assert '<p class="md-p">The command saves the page for comparison.</p>' in html
+    assert "<br>" not in html
+    assert "<strong>not bold</strong>" not in html
+    assert "<b>not html</b>" not in html
+
+
+def test_unterminated_fence_renders_to_end_of_text(renderer):
+    html = _render(renderer, "Steps:\n\n```sh\necho hi\nstill code")["html"]
+    assert html.count("<pre") == 1
+    assert ('<pre class="md-code language-sh"><code>'
+            'echo hi\nstill code</code></pre>') in html
 
 
 def test_long_cell_truncates_with_full_value_in_title(renderer):
